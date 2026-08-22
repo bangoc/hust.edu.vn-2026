@@ -3,4 +3,7 @@ Thu thập dữ liệu từ hust.edu.vn, các nhóm cung cấp kết quả trong
 --- Trang tin tức html
 --- Tệp tài liệu pdf, docx, pptx v.v..
 
+Phát triển mã nguồn hỗ trợ thu thập:
+-- Tải về và đọc dữ liệu: Đầu vào là url ==> Kiểm tra url có khả dụng hay không ==> Tải về ==> Phân loại có phải trang nội dung hay không ==> Quyết định giữ hoặc lược bỏ => Bóc tách nội dung tìm kiếm.
+
 *Ghi chú: Chỉ thu thập các nội dung công khai - bỏ qua các nội dung yêu cầu đăng nhập/định danh.
