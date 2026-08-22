@@ -1,0 +1,6 @@
+Thu thập dữ liệu từ hust.edu.vn, các nhóm cung cấp kết quả trong 1 tệp văn bản với tên tự chọn chứa danh sách liên kết:
+-- Thu thập các liên kết chứa nội dung
+--- Trang tin tức html
+--- Tệp tài liệu pdf, docx, pptx v.v..
+
+*Ghi chú: Chỉ thu thập các nội dung công khai - bỏ qua các nội dung yêu cầu đăng nhập/định danh.
