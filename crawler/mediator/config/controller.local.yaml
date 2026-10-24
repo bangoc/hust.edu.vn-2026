@@ -1,0 +1,13 @@
+# Chạy không cần Docker (`uv run mediator serve --config config/controller.local.yaml`), cùng downloader
+# giả lập chạy trên máy: `uv run python -m demo.fake_fetcher --port 8800`.
+port: 5200
+downloaders:
+  - http://127.0.0.1:8800
+host_delay_seconds: 1.0
+ping_timeout_seconds: 2
+load_timeout_seconds: 10
+node_cooldown_seconds: 30
+max_attempts: 5
+tick_seconds: 0.5
+recrawl_days: {hub: 1, page: 7, document: 30}
+database: data/controller.sqlite3   # tính từ thư mục chạy lệnh (mediator/)

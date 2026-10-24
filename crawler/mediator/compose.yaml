@@ -1,0 +1,20 @@
+# mediator (Điều khiển) dùng chung cho cả lớp: nhận POST /add ở cổng 5200, gửi từng url sang downloader (config/controller.yaml).
+services:
+  mediator:
+    build: .
+    image: mediator:latest
+    restart: unless-stopped
+    command: ["serve", "--config", "${MEDIATOR_CONFIG:-config/controller.yaml}"]
+    ports: ["5200:5200"]
+    extra_hosts: ["host.docker.internal:host-gateway"]   # Tải về chạy trên cùng máy: http://host.docker.internal:8800
+    volumes:
+      - ./config:/app/config:ro
+      - mediator_state:/state
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen(u.Request('http://127.0.0.1:5200/add', data=b'{\"urls\": []}', headers={'Content-Type': 'application/json'}), timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  mediator_state:
