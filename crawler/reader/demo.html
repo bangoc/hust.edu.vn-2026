@@ -84,7 +84,7 @@
   </details>
 </main>
 <script>
-  // dịch vụ extract-service, chạy với DEMO_FETCH=1 (bật /fetch) và không đặt AGGREGATOR_URL (để /parse trả "record")
+  // dịch vụ reader-service, chạy với DEMO_FETCH=1 (bật /fetch) và không đặt STORAGE_URL (để /parse trả "record")
   const API = "http://localhost:6600";
   const $ = id => document.getElementById(id);
 
@@ -118,11 +118,11 @@
       const d = await post("/parse", JSON.stringify(doc));
       const rec = d.record;
       $("title").textContent = rec.title || "(không có tiêu đề)";
-      $("format").textContent = rec.format + (rec.ext ? " (" + rec.ext + ")" : "");
+      $("format").textContent = rec.format;
       $("intro").textContent = rec.intro || "—";
       $("len").textContent = d.chars.toLocaleString("vi-VN") + " ký tự";
       $("text").textContent = rec.content || (rec.metadata ? JSON.stringify(rec.metadata, null, 2) : "");
-      $("links").replaceChildren(...(rec["out-links"] || []).map(([u, t]) => {
+      $("links").replaceChildren(...(rec["out-links"] || []).map(({url: u, text: t}) => {
         const li = document.createElement("li");
         li.textContent = u + " — " + t;
         return li;
