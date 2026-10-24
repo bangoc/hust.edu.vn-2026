@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mediator"
+version = "0.1.0"
+description = "mediator (Điều khiển): the shared controller service of the HUST crawler (POST /add)"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "PyYAML==6.0.2",
+    "aiohttp>=3.11,<4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.17.0",
+    "pyrefly==1.3.2",
+    "pre-commit>=4.7,<5",
+    "types-PyYAML>=6,<7",
+]
+
+[project.scripts]
+mediator = "mediator.cli:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mediator"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "--strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+extend-exclude = ["data"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "RUF", "PL", "PTH", "N", "C4", "PERF", "RET", "TRY",
+    "ARG", "ERA", "S", "T20", "DTZ", "BLE", "FBT", "TID",
+]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.isort]
+known-first-party = ["mediator"]
+
+[tool.ruff.lint.pylint]
+max-args = 8
+max-positional-args = 8
+max-branches = 16
+max-returns = 8
+max-statements = 60
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501", "S101", "PLR2004", "ARG", "FBT", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0917"]
+"src/mediator/cli.py" = ["T20"]
+"src/mediator/bootstrap.py" = ["PLC0415"]
+
+[tool.pyrefly]
+preset = "strict"
+project-includes = ["src", "tests"]
+search-path = ["src", "."]
+python-interpreter-path = ".venv/bin/python"
+
+[tool.vulture]
+# Run: uvx vulture@2.14. QueuedUrl.last_sent_at is filled from the SQLite row, never read by name.
+paths = ["src", "demo"]
+min_confidence = 60
+ignore_names = ["last_sent_at"]
