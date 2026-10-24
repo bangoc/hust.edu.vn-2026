@@ -151,7 +151,7 @@ Body lỗi là `{"detail": "<chuỗi>"}`; lỗi 422 do không có chữ kèm th�
 ### Ví dụ
 
 ```bash
-curl -X POST localhost:6600/parse \
+curl -X POST 10.177.29.30:6600/parse \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://hust.edu.vn/vi/news/tin-tuc-su-kien/tong-bi-thu-chu-tich-nuoc-to-lam-trao-huan-chuong-lao-dong-hang-nhat-giao-6-nhiem-vu-trong-tam-cho-dai-hoc-bach-khoa-ha-noi-656084.html",
