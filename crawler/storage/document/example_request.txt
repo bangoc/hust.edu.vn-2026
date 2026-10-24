@@ -1,0 +1,18 @@
+curl --location 'http://10.177.29.73:2222/add' \
+--header 'Content-Type: application/json' \
+--data '{
+    "url": "https://hust.edu.vn/tin-tuc1",
+    "format": "html",
+    "title": "Tin tức 1",
+    "content": "Cơ hội thực tập có lương tại Nhật cho sinh viên chương trình HUST - KIOXIA.",
+    "out-links": [
+      {
+        "url": "https://hust.edu.vn/tin-tuc2",
+        "text": "Thông tin tuyển dụng"
+      },
+      {
+        "url": "https://hust.edu.vn/tai-lieu.pdf",
+        "text": "Tải tài liệu hướng dẫn"
+      }
+    ]
+  }'

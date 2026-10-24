@@ -1,0 +1,70 @@
+package com.hust.crawler.storage.controller;
+
+import com.hust.crawler.storage.submission.AddContentRequest;
+import com.hust.crawler.storage.submission.SubmittedContent;
+import com.hust.crawler.storage.submission.SubmittedContentService;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.annotation.*;
+import java.net.URI;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+@RestController
+public class AddContentController {
+    private final SubmittedContentService service;
+    public AddContentController(SubmittedContentService service) { this.service = service; }
+
+    @PostMapping(value = "/add", consumes = "application/json", produces = "application/json")
+    public SubmittedContent add(@RequestBody AddContentRequest request) {
+        String url = httpUrl(requiredText(request.url(), "url"));
+        String format = requiredText(request.format(), "format").toLowerCase(Locale.ROOT);
+        if (!format.matches("[a-z0-9][a-z0-9.+_-]{0,31}"))
+            throw new IllegalArgumentException("format phai la ten dinh dang, vi du html, pdf, docx");
+        String title = requiredText(request.title(), "title");
+        String content = requiredText(request.content(), "content");
+        List<SubmittedContent.OutLink> links = request.outLinks() == null ? List.of()
+                : request.outLinks().stream().map(link -> {
+                    if (link == null || link.text() == null)
+                        throw new IllegalArgumentException("Moi out-link phai co url va text");
+                    return new SubmittedContent.OutLink(httpUrl(requiredText(link.url(), "out-links.url")), link.text());
+                }).toList();
+        return service.save(url, format, title, content, links);
+    }
+
+    private static String requiredText(String value, String field) {
+        if (value == null || value.isBlank())
+            throw new IllegalArgumentException(field + " phai la chuoi khong rong");
+        return value.strip();
+    }
+
+    private static String httpUrl(String raw) {
+        String url = raw.strip();
+        try {
+            URI uri = URI.create(url);
+            if (uri.getHost() != null && uri.getUserInfo() == null
+                    && ("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme())))
+                return url;
+        } catch (IllegalArgumentException ignored) { }
+        throw new IllegalArgumentException("URL phai la dia chi http/https tuyet doi: " + url);
+    }
+
+    @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class})
+    public ResponseEntity<?> invalid(Exception e) {
+        return ResponseEntity.badRequest().body(Map.of("error", e instanceof HttpMessageNotReadableException
+                ? "JSON khong hop le" : e.getMessage()));
+    }
+
+    @ExceptionHandler(DataAccessResourceFailureException.class)
+    public ResponseEntity<?> unavailable(DataAccessResourceFailureException e) {
+        return ResponseEntity.status(503).body(Map.of("error", "Khong ket noi duoc MongoDB"));
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    public ResponseEntity<?> storageError(DataAccessException e) {
+        return ResponseEntity.internalServerError().body(Map.of("error", "Khong luu duoc noi dung vao MongoDB"));
+    }
+}
