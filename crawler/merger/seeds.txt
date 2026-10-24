@@ -1,0 +1,6 @@
+# Tập url mầm - mỗi dòng một url, dòng bắt đầu bằng # bị bỏ qua
+https://hust.edu.vn/
+https://hust.edu.vn/vi/news/tin-tuc-su-kien/
+https://ctt.hust.edu.vn/
+https://library.hust.edu.vn/
+https://soict.hust.edu.vn/
