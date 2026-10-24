@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extract service</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --card: #ffffff; --text: #1f2933; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #b3121f; --accent-soft: #fdecee; --error: #b42318;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  .sub { margin: 0 0 24px; color: var(--muted); }
+  form { display: flex; gap: 8px; }
+  input {
+    flex: 1; min-width: 0; padding: 10px 12px; font: inherit;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  button {
+    padding: 10px 18px; font: inherit; font-weight: 600; color: #fff;
+    background: var(--accent); border: 0; border-radius: 8px; cursor: pointer;
+  }
+  button:disabled { opacity: .6; cursor: wait; }
+  .samples { margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 6px; font-size: 14px; }
+  .samples span { color: var(--muted); }
+  .samples a {
+    color: var(--accent); background: var(--accent-soft); padding: 2px 10px;
+    border-radius: 999px; text-decoration: none;
+  }
+  #status { margin: 20px 0 0; color: var(--muted); min-height: 1.6em; }
+  #status.error { color: var(--error); }
+  .card {
+    margin-top: 12px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px 24px;
+  }
+  .card h2 { margin: 0 0 12px; font-size: 21px; line-height: 1.35; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 16px; font-size: 14px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  code { font: 13px ui-monospace, Menlo, monospace; background: var(--bg); padding: 1px 6px; border-radius: 4px; }
+  .text { white-space: pre-wrap; border-top: 1px solid var(--line); padding-top: 16px; max-height: 60vh; overflow: auto; }
+  details { margin-top: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+  summary { padding: 14px 24px; cursor: pointer; font-weight: 600; }
+  details pre {
+    margin: 0; padding: 16px 24px; border-top: 1px solid var(--line); max-height: 70vh; overflow: auto;
+    font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Extract service</h1>
+  <p class="sub">Nhập url trang web hoặc tệp pdf/docx.</p>
+
+  <form id="form">
+    <input id="url" type="url" required placeholder="https://hust.edu.vn/..." aria-label="Url của tài liệu">
+    <button id="go">Bóc tách</button>
+  </form>
+
+  <p id="status" role="status"></p>
+
+  <article id="result" class="card" hidden>
+    <h2 id="title"></h2>
+    <dl>
+      <dt>Định dạng</dt><dd id="format"></dd>
+      <dt>Intro</dt><dd id="intro"></dd>
+      <dt>Độ dài</dt><dd id="len"></dd>
+    </dl>
+    <div id="text" class="text"></div>
+    <ul id="links"></ul>
+  </article>
+
+  <details id="raw" hidden>
+    <summary>HTML thô</summary>
+    <pre id="raw-html"></pre>
+  </details>
+</main>
+<script>
+  // dịch vụ extract-service, chạy với DEMO_FETCH=1 (bật /fetch) và không đặt AGGREGATOR_URL (để /parse trả "record")
+  const API = "http://localhost:6600";
+  const $ = id => document.getElementById(id);
+
+  // nội dung base64 do /fetch trả -> chữ để xem; tệp không phải HTML thì không hiện byte
+  const rawText = doc => {
+    if (doc.format !== "html") return "(tệp " + (doc.content_type || "không rõ kiểu") + ", không phải HTML)";
+    const bytes = Uint8Array.from(atob(doc.content), c => c.charCodeAt(0));
+    const cs = (/charset="?([^";\s]+)/i.exec(doc.content_type) || [])[1] || "utf-8";
+    try { return new TextDecoder(cs).decode(bytes); } catch { return new TextDecoder().decode(bytes); }
+  };
+
+  $("form").addEventListener("submit", async e => {
+    e.preventDefault();
+    $("go").disabled = true;
+    $("status").className = "";
+    $("status").textContent = "Đang tải…";
+    $("result").hidden = true;
+    $("raw").hidden = true;
+    try {
+      // không đặt Content-Type: request "simple", trình duyệt không gửi preflight OPTIONS
+      const post = async (path, body) => {
+        const r = await fetch(API + path, {method: "POST", body});
+        const d = await r.json();
+        if (!r.ok) throw new Error(path + ": " + (d.detail || "HTTP " + r.status));
+        return d;
+      };
+      const doc = await post("/fetch", JSON.stringify({url: $("url").value}));
+      $("raw-html").textContent = rawText(doc);
+      $("raw").hidden = false;
+      $("status").textContent = "Đang bóc tách…";
+      const d = await post("/parse", JSON.stringify(doc));
+      const rec = d.record;
+      $("title").textContent = rec.title || "(không có tiêu đề)";
+      $("format").textContent = rec.format + (rec.ext ? " (" + rec.ext + ")" : "");
+      $("intro").textContent = rec.intro || "—";
+      $("len").textContent = d.chars.toLocaleString("vi-VN") + " ký tự";
+      $("text").textContent = rec.content || (rec.metadata ? JSON.stringify(rec.metadata, null, 2) : "");
+      $("links").replaceChildren(...(rec["out-links"] || []).map(([u, t]) => {
+        const li = document.createElement("li");
+        li.textContent = u + " — " + t;
+        return li;
+      }));
+      $("result").hidden = false;
+      $("status").textContent = "Xong.";
+    } catch (err) {
+      $("status").className = "error";
+      $("status").textContent = "Lỗi: " + err.message;
+    } finally {
+      $("go").disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
