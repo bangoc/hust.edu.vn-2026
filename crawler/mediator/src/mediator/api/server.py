@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import AsyncIterator
 
 from aiohttp import web
@@ -27,6 +28,17 @@ def create_app(queue: UrlQueue, clock: Clock) -> web.Application:
         if not isinstance(urls, list) or not all(isinstance(url, str) for url in urls):
             return error(400, "urls must be a list of strings")
         result = add_urls(queue, urls, clock)
+        if urls:  # the healthcheck posts an empty list every 10 s; keep it out of the log
+            log.info(
+                "đã nhận %d url từ %s: %d mới, %d trùng, %d loại",
+                len(urls),
+                request.remote,
+                result.accepted,
+                result.duplicates,
+                result.rejected,
+            )
+            for url, outcome in result.outcomes:
+                log.info("  %-5s %s", outcome.removeprefix("bị "), url)
         return web.json_response(
             {
                 "accepted": result.accepted,
@@ -78,16 +90,23 @@ async def dispatch_loop(dispatcher: Dispatcher, tick_seconds: float) -> None:
 async def summary_loop(
     queue: UrlQueue, dispatcher: Dispatcher, clock: Clock, every: float = SUMMARY_SECONDS
 ) -> None:
+    """Log the queue and node state every ``every`` seconds, only when it changed."""
+    last = ""
     while True:
         await asyncio.sleep(every)
         now = clock.now()
         counts = queue.counts(now)
-        nodes = len(dispatcher.config.downloaders)
-        resting = nodes - len(dispatcher.rotation.order(now))
-        log.info(
-            "controller: %d urls, %d due, %d/%d nodes resting",
-            counts.total,
-            counts.due,
-            resting,
-            nodes,
+        ready = set(dispatcher.rotation.order(now))
+        nodes = ", ".join(
+            f"{node} sẵn sàng" if node in ready else f"{node} đang nghỉ tới {_clock_time(rest)}"
+            for node in dispatcher.config.downloaders
+            for rest in [dispatcher.rotation.resting.get(node, 0.0)]
         )
+        line = f"tổng: {counts.total} url, {counts.due} chờ gửi | downloader: {nodes}"
+        if line != last:
+            log.info("%s", line)
+            last = line
+
+
+def _clock_time(seconds: float) -> str:
+    return time.strftime("%H:%M:%S", time.localtime(seconds))

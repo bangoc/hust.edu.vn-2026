@@ -6,7 +6,7 @@ from typing import Literal, Protocol
 
 from mediator.domain.controller.models import QueuedUrl, UrlKind
 
-type LoadResult = Literal["accepted", "busy", "failed"]
+type LoadResult = Literal["accepted", "busy", "rejected", "failed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,8 +16,8 @@ class QueueCounts:
 
 
 class UrlQueue(Protocol):
-    def add(self, items: Sequence[tuple[str, str, UrlKind]], now: float) -> int:
-        """Insert ``(url, host, kind)`` rows not yet known, due now; return how many were new."""
+    def add(self, items: Sequence[tuple[str, str, UrlKind]], now: float) -> list[str]:
+        """Insert ``(url, host, kind)`` rows not yet known, due now; return the new URLs."""
         ...
 
     def next_due(self, now: float, host_delay_seconds: float) -> QueuedUrl | None:
@@ -37,7 +37,7 @@ class Downloader(Protocol):
         ...
 
     async def load(self, node: str, url: str) -> LoadResult:
-        """Send one URL to the node's ``/load``: 2xx accepted, 409 busy, anything else failed."""
+        """POST to the node's ``/load``: 2xx accepted, 409 busy, 4xx rejected, else failed."""
         ...
 
     async def close(self) -> None: ...

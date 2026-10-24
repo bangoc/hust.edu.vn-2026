@@ -6,6 +6,9 @@ services:
     restart: unless-stopped
     command: ["serve", "--config", "${MEDIATOR_CONFIG:-config/controller.yaml}"]
     ports: ["5200:5200"]
+    environment:
+      TZ: Asia/Ho_Chi_Minh                    # log theo giờ Việt Nam
+      MEDIATOR_LOG_FILE: /state/mediator.log  # log ghi thêm vào volume, không mất khi build lại
     extra_hosts: ["host.docker.internal:host-gateway"]   # Tải về chạy trên cùng máy: http://host.docker.internal:8800
     volumes:
       - ./config:/app/config:ro

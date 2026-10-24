@@ -10,6 +10,11 @@ def test_add_urls_counts() -> None:
         queue, ["https://hust.edu.vn/a", "https://hust.edu.vn/a#x", "mailto:x"], clock
     )
     assert result == AddResult(accepted=1, duplicates=1, rejected=1)
+    assert result.outcomes == (
+        ("https://hust.edu.vn/a", "mới"),
+        ("https://hust.edu.vn/a#x", "trùng"),
+        ("mailto:x", "bị loại"),
+    )
     assert queue.rows["https://hust.edu.vn/a"].kind == "page"
     assert queue.rows["https://hust.edu.vn/a"].host == "hust.edu.vn"
 

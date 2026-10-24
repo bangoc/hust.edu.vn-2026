@@ -23,5 +23,10 @@ def after_failure(
     attempts = item.attempts + 1
     if attempts < config.max_attempts:
         return now, attempts
-    later = after_success(now, item.kind, config.recrawl_days)
-    return (later if later is not None else now + DAY_SECONDS), 0
+    return after_rejection(now, item.kind, config.recrawl_days), 0
+
+
+def after_rejection(now: float, kind: UrlKind, recrawl_days: Mapping[UrlKind, float]) -> float:
+    """When a URL the node refused (4xx) is due again: one period later, or a day."""
+    later = after_success(now, kind, recrawl_days)
+    return later if later is not None else now + DAY_SECONDS

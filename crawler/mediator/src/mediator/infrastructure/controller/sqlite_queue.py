@@ -34,14 +34,17 @@ class SqliteUrlQueue:
     def close(self) -> None:
         self.db.close()
 
-    def add(self, items: Sequence[tuple[str, str, UrlKind]], now: float) -> int:
-        before = self.db.total_changes
+    def add(self, items: Sequence[tuple[str, str, UrlKind]], now: float) -> list[str]:
+        added: list[str] = []
         with transaction(self.db):
-            self.db.executemany(
-                "INSERT OR IGNORE INTO urls (url, host, kind, next_due_at) VALUES (?, ?, ?, ?)",
-                [(url, host, kind, now) for url, host, kind in items],
-            )
-        return self.db.total_changes - before
+            for url, host, kind in items:
+                cursor = self.db.execute(
+                    "INSERT OR IGNORE INTO urls (url, host, kind, next_due_at) VALUES (?, ?, ?, ?)",
+                    (url, host, kind, now),
+                )
+                if cursor.rowcount:
+                    added.append(url)
+        return added
 
     def next_due(self, now: float, host_delay_seconds: float) -> QueuedUrl | None:
         row = self.db.execute(

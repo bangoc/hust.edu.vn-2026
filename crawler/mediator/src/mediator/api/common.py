@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import signal
 from typing import Any
 
@@ -33,15 +34,23 @@ async def json_object(request: web.Request) -> dict[str, Any]:
 
 def run(app: web.Application, port: int) -> None:
     """Serve ``app`` on every interface until SIGTERM/SIGINT."""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log_file := os.environ.get("MEDIATOR_LOG_FILE"):  # kept on the volume, survives rebuilds
+        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-5s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=handlers,
+    )
     asyncio.run(_serve(app, port))
 
 
 async def _serve(app: web.Application, port: int) -> None:
-    runner = web.AppRunner(app)
+    runner = web.AppRunner(app, access_log=None)  # handlers log what matters
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", port).start()  # noqa: S104 -- a service inside a container
-    log.info("listening on :%d", port)
+    log.info("mediator chạy ở cổng %d", port)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

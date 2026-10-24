@@ -22,12 +22,12 @@ class FakeUrlQueue:
         self.rows: dict[str, QueuedUrl] = {}
         self.host_sent: dict[str, float] = {}
 
-    def add(self, items: Sequence[tuple[str, str, UrlKind]], now: float) -> int:
-        added = 0
+    def add(self, items: Sequence[tuple[str, str, UrlKind]], now: float) -> list[str]:
+        added: list[str] = []
         for url, host, kind in items:
             if url not in self.rows:
                 self.rows[url] = QueuedUrl(url, host, kind, now, None, 0)
-                added += 1
+                added.append(url)
         return added
 
     def next_due(self, now: float, host_delay_seconds: float) -> QueuedUrl | None:

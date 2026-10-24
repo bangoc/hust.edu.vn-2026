@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mediator.domain.controller.models import ControllerConfig, QueuedUrl, UrlKind
-from mediator.domain.controller.scheduling import after_failure, after_success
+from mediator.domain.controller.scheduling import after_failure, after_rejection, after_success
 
 DAY = 86400.0
 PERIODS: dict[UrlKind, float] = {"hub": 1.0, "page": 7.0, "document": 30.0}
@@ -42,3 +42,8 @@ def test_after_failure_backs_off_one_period_at_max() -> None:
 def test_after_failure_at_max_with_zero_period_waits_a_day() -> None:
     config = _config(recrawl_days={**PERIODS, "page": 0.0})
     assert after_failure(_item(4), 50.0, config) == (50.0 + DAY, 0)
+
+
+def test_after_rejection_waits_one_period() -> None:
+    assert after_rejection(50.0, "page", {"hub": 1, "page": 7, "document": 0}) == 50.0 + 7 * 86400.0
+    assert after_rejection(50.0, "document", {"hub": 1, "page": 7, "document": 0}) == 50.0 + 86400.0

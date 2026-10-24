@@ -8,7 +8,9 @@ from mediator.infrastructure.controller.sqlite_queue import SqliteUrlQueue
 def test_sqlite_queue_survives_reopen(tmp_path: Path) -> None:
     path = tmp_path / "q.sqlite3"
     queue = SqliteUrlQueue(path)
-    assert queue.add([("https://a/1", "a", "page"), ("https://a/1", "a", "page")], 1.0) == 1
+    assert queue.add([("https://a/1", "a", "page"), ("https://a/1", "a", "page")], 1.0) == [
+        "https://a/1"
+    ]
     queue.mark_sent("https://a/1", 2.0, 50.0)
     queue.close()
     reopened = SqliteUrlQueue(path)

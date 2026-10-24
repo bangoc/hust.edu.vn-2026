@@ -75,6 +75,21 @@ def test_dispatch_failed_load_keeps_url_due() -> None:
     assert dispatcher.rotation.resting["a"] == clock.t + 30.0
 
 
+def test_dispatch_rejected_load_does_not_rest_node() -> None:
+    bad, good = "https://a.hust.edu.vn/1", "https://b.hust.edu.vn/1"
+    dispatcher, queue, downloader, clock = _setup(
+        {"a": IDLE}, [bad], load_results={"a": "rejected"}
+    )
+    assert _steps(dispatcher, 1) == [False]
+    assert "a" not in dispatcher.rotation.resting
+    assert queue.rows[bad].attempts == 0
+    assert queue.rows[bad].next_due_at == clock.t + 7 * DAY
+    downloader.load_results = {}
+    add_urls(queue, [good], clock)
+    assert _steps(dispatcher, 1) == [True]
+    assert downloader.loads[-1] == ("a", good)
+
+
 def test_dispatch_sets_recrawl_after_success() -> None:
     url = "https://a.hust.edu.vn/1"
     dispatcher, queue, _, clock = _setup({"a": IDLE}, [url])
@@ -94,7 +109,7 @@ def test_unexpected_ping_status_is_logged(caplog: pytest.LogCaptureFixture) -> N
     with caplog.at_level(logging.WARNING):
         assert _steps(dispatcher, 1) == [False]
     assert downloader.loads == []
-    assert "unexpected ping status" in caplog.text
+    assert "trạng thái lạ" in caplog.text
     assert "dang cho" in caplog.text
 
 

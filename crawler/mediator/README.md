@@ -5,7 +5,7 @@
 | **N8 · merger** | Gửi url vào mediator bằng `POST /add`. Xem [mục 1](#1-n8--merger-gửi-url-vào-mediator). |
 | **N5 · downloader** | Làm hai endpoint `GET /ping` và `POST /load` để mediator gọi. Xem [mục 2](#2-n5--downloader-làm-hai-endpoint-cho-mediator-gọi). |
 
-Địa chỉ của mediator: `http://<ip-máy-BAT>:5200`. Hỏi nhóm BAT để biết IP.
+Địa chỉ của mediator: `http://<ip-máy-BAT>:5200`. 
 
 ## 1. N8 · merger: gửi url vào mediator
 
@@ -96,4 +96,14 @@ curl -i -X POST http://localhost:8800/load -d '{"url": "https://hust.edu.vn/"}'
 # HTTP/1.1 202 Accepted ...      (phải trả về ngay)
 curl http://localhost:8800/ping
 # {"status": "đang bận"}         (trong lúc đang tải)
+```
+## 3. BAT · xuất các url đã nhận và đã gửi
+
+Chạy trên máy BAT, lúc container mediator đang chạy:
+
+```bash
+cd crawler/mediator
+./export_urls.sh
+# out/urls.csv: 20 url (20 đã gửi)
+# out/nhan_gui.log: 20 dòng
 ```

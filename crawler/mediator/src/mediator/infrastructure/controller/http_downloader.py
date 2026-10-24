@@ -42,7 +42,12 @@ class HttpDownloader:
             ) as response:
                 if response.status == HTTPStatus.CONFLICT:
                     return "busy"
-                return "accepted" if response.ok else "failed"
+                if response.ok:
+                    return "accepted"
+                # 4xx: the node is fine but refuses this URL (bad/blocked url, queue_full is 503).
+                return (
+                    "rejected" if response.status < HTTPStatus.INTERNAL_SERVER_ERROR else "failed"
+                )
         except (aiohttp.ClientError, TimeoutError):
             return "failed"
 
