@@ -1,0 +1,13 @@
+# docker compose up -d --build
+# curl -X POST localhost:6600/parse -H 'Content-Type: application/json' -d '{"url":"https://hust.edu.vn/a","format":"html","encoding":"text","content":"<h1>Tiêu đề</h1>"}'
+name: extract-service
+
+services:
+  extract-service:
+    build: .
+    ports: ["6600:6600"]
+    environment:
+      # Địa chỉ /add của service tổng hợp dữ liệu.
+      AGGREGATOR_URL: ""
+      # Bật POST /fetch cho demo.html . Đặt "0" khi không cần tải html/file về (nhận kết quả từ service khác).
+      DEMO_FETCH: "1"
