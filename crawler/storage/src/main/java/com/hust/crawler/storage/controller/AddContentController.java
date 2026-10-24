@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.*;
 import java.net.URI;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -25,14 +26,29 @@ public class AddContentController {
         if (!format.matches("[a-z0-9][a-z0-9.+_-]{0,31}"))
             throw new IllegalArgumentException("format phai la ten dinh dang, vi du html, pdf, docx");
         String title = requiredText(request.title(), "title");
-        String content = requiredText(request.content(), "content");
+        String base64 = validateBase64(request.base64());
+        String content = request.content() == null ? "" : request.content().strip();
+        if (content.isEmpty() && base64 == null)
+            throw new IllegalArgumentException("Can cung cap content hoac base64");
         List<SubmittedContent.OutLink> links = request.outLinks() == null ? List.of()
                 : request.outLinks().stream().map(link -> {
                     if (link == null || link.text() == null)
                         throw new IllegalArgumentException("Moi out-link phai co url va text");
                     return new SubmittedContent.OutLink(httpUrl(requiredText(link.url(), "out-links.url")), link.text());
                 }).toList();
-        return service.save(url, format, title, content, links);
+        return service.save(url, format, title, content, base64, request.intro(), links);
+    }
+
+    private static String validateBase64(String raw) {
+        if (raw == null) return null;
+        String value = raw.strip();
+        if (value.isEmpty()) throw new IllegalArgumentException("base64 khong duoc rong");
+        try {
+            Base64.getDecoder().decode(value);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("base64 khong hop le (gui chuoi Base64 thuan, khong kem data:image/...)");
+        }
+        return value;
     }
 
     private static String requiredText(String value, String field) {

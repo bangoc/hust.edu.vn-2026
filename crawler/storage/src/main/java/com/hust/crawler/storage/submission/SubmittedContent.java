@@ -6,10 +6,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.List;
 
-/** Independent schema for content submitted through POST /add. */
 @Document("submitted_contents")
 public record SubmittedContent(
-        @Id String id, String url, String format, String title, String content,
+        @Id String id, String url, String format, String title, String content, String base64, String intro,
         @JsonProperty("out-links") List<OutLink> outLinks,
         Instant createdAt, Instant updatedAt) {
     public record OutLink(String url, String text) {}

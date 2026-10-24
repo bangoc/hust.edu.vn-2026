@@ -26,16 +26,16 @@ class AddContentControllerTest {
     @BeforeEach void setup() {
         service = mock(SubmittedContentService.class);
         mvc = MockMvcBuilders.standaloneSetup(new AddContentController(service)).build();
-        when(service.save(anyString(), anyString(), anyString(), anyString(), anyList()))
+        when(service.save(anyString(), anyString(), anyString(), anyString(), nullable(String.class), nullable(String.class), anyList()))
                 .thenAnswer(i -> new SubmittedContent(i.getArgument(0), i.getArgument(0), i.getArgument(1),
-                        i.getArgument(2), i.getArgument(3), i.getArgument(4), Instant.EPOCH, Instant.EPOCH));
+                        i.getArgument(2), i.getArgument(3), i.getArgument(4), i.getArgument(5), i.getArgument(6), Instant.EPOCH, Instant.EPOCH));
     }
     @Test void acceptsTypedRequestAndNormalizesFormat() throws Exception {
         mvc.perform(post("/add").contentType("application/json")
                 .content(body("[{\"url\":\"https://hust.edu.vn/2\",\"text\":\"Liên kết\"}]")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.format").value("html"))
                 .andExpect(jsonPath("$['out-links'][0].text").value("Liên kết"));
-        verify(service).save("https://hust.edu.vn/tin-tuc1", "html", "Tin tức 1", "Nội dung bóc tách",
+        verify(service).save("https://hust.edu.vn/tin-tuc1", "html", "Tin tức 1", "Nội dung bóc tách", null, null,
                 List.of(new SubmittedContent.OutLink("https://hust.edu.vn/2", "Liên kết")));
     }
     @Test void acceptsMultipleLinks() throws Exception {
@@ -64,8 +64,32 @@ class AddContentControllerTest {
         }
         verifyNoInteractions(service);
     }
+    @Test void acceptsBase64ImageWithoutText() throws Exception {
+        mvc.perform(post("/add").contentType("application/json").content("""
+            {"url":"https://hust.edu.vn/image.png", "format":"png", "title":"Ảnh",
+             "base64":"aGVsbG8=", "out-links":[]}
+            """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.base64").value("aGVsbG8="))
+                .andExpect(jsonPath("$.content").value(""));
+        verify(service).save("https://hust.edu.vn/image.png", "png", "Ảnh", "", "aGVsbG8=", null, List.of());
+    }
+    @Test void rejectsInvalidBase64() throws Exception {
+        for (String value : List.of("???", "", "data:image/png;base64,aGVsbG8=")) {
+            String request = body("[]").replace("\"out-links\":", "\"base64\":\"" + value + "\",\"out-links\":");
+            mvc.perform(post("/add").contentType("application/json").content(request))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(service);
+    }
+    @Test void acceptsIntro() throws Exception {
+        String request = body("[]").replace("\"out-links\":", "\"intro\":\"Giới thiệu bài viết\",\"out-links\":");
+        mvc.perform(post("/add").contentType("application/json").content(request))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.intro").value("Giới thiệu bài viết"));
+        verify(service).save("https://hust.edu.vn/tin-tuc1", "html", "Tin tức 1", "Nội dung bóc tách",
+                null, "Giới thiệu bài viết", List.of());
+    }
     @Test void reportsUnavailableDatabase() throws Exception {
-        when(service.save(anyString(),anyString(),anyString(),anyString(),anyList()))
+        when(service.save(anyString(),anyString(),anyString(),anyString(),nullable(String.class),nullable(String.class),anyList()))
                 .thenThrow(new DataAccessResourceFailureException("down"));
         mvc.perform(post("/add").contentType("application/json").content(body("[]")))
                 .andExpect(status().isServiceUnavailable());
