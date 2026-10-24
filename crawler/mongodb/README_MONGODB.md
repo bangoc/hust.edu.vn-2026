@@ -3,7 +3,7 @@
 Máy cần cùng mạng LAN với server. URI kết nối:
 
 ```text
-mongodb://$IP:27017
+mongodb://192.168.0.176:27017
 ```
 
 Không dùng username/password. Trong Compass chọn **Authentication: None** và
