@@ -17,10 +17,10 @@ def _int(name: str, default: int) -> int:
 HOST = _env("MERGER_HOST", "0.0.0.0")
 PORT = _int("MERGER_PORT", 3000)
 
-# Mô-đun Lưu trữ (N10): POST {STORAGE_URL}/add
-STORAGE_URL = _env("STORAGE_URL", "http://localhost:2222").rstrip("/")
-# Mô-đun Điều khiển (BAT): POST {CONTROLLER_URL}/add  body {"urls": [...]}
-CONTROLLER_URL = _env("CONTROLLER_URL", "http://localhost:5200").rstrip("/")
+# Lưu trữ - N10 (storage): POST {STORAGE_URL}/add
+STORAGE_URL = _env("STORAGE_URL", "http://10.177.29.73:2222").rstrip("/")
+# Điều khiển - BAT (mediator): POST {CONTROLLER_URL}/add  body {"urls": [...]}
+CONTROLLER_URL = _env("CONTROLLER_URL", "http://10.177.29.102:5200").rstrip("/")
 
 # Miền được phép thu thập: chính miền này và mọi miền con của nó.
 ALLOWED_DOMAIN = _env("ALLOWED_DOMAIN", "hust.edu.vn").lower()
