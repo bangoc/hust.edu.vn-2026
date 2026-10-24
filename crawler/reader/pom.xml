@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>vn.hust</groupId>
-  <artifactId>extract-service</artifactId>
+  <artifactId>reader-service</artifactId>
   <version>1.0</version>
   <packaging>jar</packaging>
 
@@ -40,7 +40,7 @@
   </dependencies>
 
   <build>
-    <finalName>extract-service</finalName>
+    <finalName>reader-service</finalName>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

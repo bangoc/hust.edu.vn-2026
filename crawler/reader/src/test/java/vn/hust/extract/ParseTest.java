@@ -24,21 +24,25 @@ import org.junit.jupiter.api.Test;
 class ParseTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final HttpClient HTTP = HttpClient.newHttpClient();
-    private HttpServer n8, main, bare;
+    private HttpServer storage, mediator, main, bare;
     private final AtomicReference<String> lastBody = new AtomicReference<>();
+    private final AtomicReference<String> mediatorBody = new AtomicReference<>();
     private final AtomicInteger calls = new AtomicInteger();
-    private volatile int n8Status = 200;
+    private final AtomicInteger mediatorCalls = new AtomicInteger();
+    private volatile int storageStatus = 200, mediatorStatus = 200;
 
     @BeforeEach
     void setUp() throws Exception {
-        n8 = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        n8.createContext("/add", ex -> {
+        storage = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        storage.createContext("/add", ex -> {
             lastBody.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             calls.incrementAndGet();
-            ex.sendResponseHeaders(n8Status, -1);
+            byte[] err = "{\"error\":\"thiếu title\"}".getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(storageStatus, storageStatus == 200 ? -1 : err.length);
+            if (storageStatus != 200) ex.getResponseBody().write(err);
             ex.close();
         });
-        n8.createContext("/page", ex -> {  // trang web giả cho /fetch
+        storage.createContext("/page", ex -> {  // trang web giả cho /fetch
             byte[] b = HTML.getBytes(StandardCharsets.UTF_8);
             ex.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
             ex.sendResponseHeaders(200, b.length);
@@ -46,14 +50,24 @@ class ParseTest {
                 os.write(b);
             }
         });
-        n8.start();
-        main = Main.start(0, "http://127.0.0.1:" + n8.getAddress().getPort() + "/add", false);
-        bare = Main.start(0, "", true);
+        storage.start();
+        mediator = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        mediator.createContext("/add", ex -> {
+            mediatorBody.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            mediatorCalls.incrementAndGet();
+            ex.sendResponseHeaders(mediatorStatus, -1);
+            ex.close();
+        });
+        mediator.start();
+        main = Main.start(0, "http://127.0.0.1:" + storage.getAddress().getPort() + "/add",
+                "http://127.0.0.1:" + mediator.getAddress().getPort() + "/add", false);
+        bare = Main.start(0, "", "", true);
     }
 
     @AfterEach
     void tearDown() {
-        n8.stop(0);
+        storage.stop(0);
+        mediator.stop(0);
         main.stop(0);
         bare.stop(0);
     }
@@ -69,28 +83,50 @@ class ParseTest {
     }
 
     private static final String HTML = "<head><meta name=description content='Sapo'></head><body><h1>Tiêu đề</h1>"
-            + "<p>Đây là đoạn văn đủ dài để làm khối nội dung chính, có <a href='/b'>liên kết</a> ở giữa.</p></body>";
+            + "<p>Đây là đoạn văn đủ dài để làm khối nội dung chính, có <a href='/b'>liên kết</a> ở giữa, và <a href='https://example.com/x'>link ngoài</a>.</p></body>";
 
     @Test
     void htmlIsForwarded() throws Exception {
         var r = send(main, "POST", "/parse", req(Map.of("url", "https://hust.edu.vn/a", "format", "html", "encoding", "text", "content", HTML)));
         assertEquals(200, r.statusCode());
-        assertEquals(1, JSON.readTree(r.body()).get("n_out_links").asInt());
+        assertEquals(2, JSON.readTree(r.body()).get("n_out_links").asInt());
+        assertEquals(1, JSON.readTree(r.body()).get("n_hust_links").asInt());
         JsonNode f = JSON.readTree(lastBody.get());
         assertEquals("[url, format, title, content, intro, out-links]", f.properties().stream().map(Map.Entry::getKey).toList().toString());
-        assertEquals("https://hust.edu.vn/a", f.get("url").asText());
+        assertEquals("html", f.get("format").asText());
         assertEquals("Tiêu đề", f.get("title").asText());
         assertEquals("Sapo", f.get("intro").asText());
-        assertEquals(2, f.get("out-links").get(0).size());
-        assertEquals("https://hust.edu.vn/b", f.get("out-links").get(0).get(0).asText());
-        assertTrue(f.get("out-links").get(0).get(1).asText().contains("có liên kết ở giữa"));
+        assertEquals("https://hust.edu.vn/b", f.get("out-links").get(0).get("url").asText());
+        assertTrue(f.get("out-links").get(0).get("text").asText().contains("có liên kết ở giữa"));
+        assertEquals("https://example.com/x", f.get("out-links").get(1).get("url").asText());
+        assertEquals("{\"urls\":[\"https://hust.edu.vn/b\"]}", mediatorBody.get());
     }
 
     @Test
-    void withoutAggregatorReturnsRecord() throws Exception {
+    void outLinkUrlsAreEncoded() throws Exception {
+        String html = "<h1>T</h1><p>Đoạn văn đủ dài để làm khối nội dung chính, có <a href='/tài liệu.pdf'>tệp</a>.</p>";
+        var r = send(main, "POST", "/parse", req(Map.of("url", "https://soict.hust.edu.vn/a", "format", "html", "encoding", "text", "content", html)));
+        assertEquals(200, r.statusCode());
+        String enc = "https://soict.hust.edu.vn/t%C3%A0i%20li%E1%BB%87u.pdf";
+        assertEquals(enc, JSON.readTree(lastBody.get()).get("out-links").get(0).get("url").asText());
+        assertEquals("{\"urls\":[\"" + enc + "\"]}", mediatorBody.get());
+    }
+
+    @Test
+    void noHustLinksSkipsMediator() throws Exception {
+        String html = "<h1>T</h1><p>Đoạn văn đủ dài để làm khối nội dung chính, có <a href='https://example.com/x'>link ngoài</a>.</p>";
+        var r = send(main, "POST", "/parse", req(Map.of("url", "https://hust.edu.vn/a", "format", "html", "encoding", "text", "content", html)));
+        assertEquals(200, r.statusCode());
+        assertEquals(0, JSON.readTree(r.body()).get("n_hust_links").asInt());
+        assertEquals(0, mediatorCalls.get());
+    }
+
+    @Test
+    void withoutStorageReturnsRecord() throws Exception {
         var r = send(bare, "POST", "/parse", req(Map.of("url", "https://hust.edu.vn/a", "format", "html", "encoding", "text", "content", HTML)));
         assertEquals(200, r.statusCode());
         assertEquals("Tiêu đề", JSON.readTree(r.body()).at("/record/title").asText());
+        assertEquals(0, calls.get());
     }
 
     @Test
@@ -118,8 +154,8 @@ class ParseTest {
                 "content", Base64.getEncoder().encodeToString(rtf))));
         assertEquals(200, r.statusCode());
         JsonNode f = JSON.readTree(lastBody.get());
-        assertEquals("other", f.get("format").asText());
-        assertEquals("rtf", f.get("ext").asText());
+        assertEquals("rtf", f.get("format").asText());
+        assertEquals("f", f.get("title").asText());
         assertEquals("Hello Tika", f.get("content").asText());
     }
 
@@ -132,15 +168,16 @@ class ParseTest {
                 "encoding", "base64", "content", png)));
         assertEquals(200, r.statusCode());
         JsonNode f = JSON.readTree(lastBody.get());
-        assertEquals("[url, format, ext, title, content, intro, metadata]", f.properties().stream().map(Map.Entry::getKey).toList().toString());
-        assertEquals("png", f.get("ext").asText());
+        assertEquals("[url, format, title, content, base64, intro, metadata]", f.properties().stream().map(Map.Entry::getKey).toList().toString());
+        assertEquals("png", f.get("format").asText());
+        assertEquals(png, f.get("base64").asText());
         assertEquals("sơ đồ", f.get("title").asText());
         assertEquals("", f.get("content").asText());
         assertEquals("{\"mime\":\"image/png\",\"width\":40,\"height\":30}", f.get("metadata").toString());
         // url không đuôi: đuôi lấy từ kiểu Tika nhận dạng, tiêu đề là đoạn cuối đường dẫn
         send(main, "POST", "/parse", req(Map.of("url", "https://a.vn/img/42", "format", "other", "encoding", "base64", "content", png)));
         f = JSON.readTree(lastBody.get());
-        assertEquals("png", f.get("ext").asText());
+        assertEquals("png", f.get("format").asText());
         assertEquals("42", f.get("title").asText());
     }
 
@@ -152,16 +189,28 @@ class ParseTest {
     }
 
     @Test
-    void aggregatorFailureIs502AfterRetry() throws Exception {
-        n8Status = 500;
-        var r = send(main, "POST", "/parse", req(Map.of("url", "https://a.vn/", "format", "html", "encoding", "text", "content", HTML)));
+    void storageFailureIs502AndMediatorNotCalled() throws Exception {
+        storageStatus = 400;
+        var r = send(main, "POST", "/parse", req(Map.of("url", "https://hust.edu.vn/a", "format", "html", "encoding", "text", "content", HTML)));
         assertEquals(502, r.statusCode());
         assertEquals(2, calls.get());
+        assertTrue(JSON.readTree(r.body()).get("detail").asText().startsWith("Lưu trữ không nhận: HTTP 400 {\"error\":\"thiếu title\"}"));
+        assertEquals(0, mediatorCalls.get());
+    }
+
+    @Test
+    void mediatorFailureIs502() throws Exception {
+        mediatorStatus = 500;
+        var r = send(main, "POST", "/parse", req(Map.of("url", "https://hust.edu.vn/a", "format", "html", "encoding", "text", "content", HTML)));
+        assertEquals(502, r.statusCode());
+        assertEquals(1, calls.get());
+        assertEquals(2, mediatorCalls.get());
+        assertTrue(JSON.readTree(r.body()).get("detail").asText().startsWith("Điều khiển không nhận: HTTP 500"));
     }
 
     @Test
     void fetchOutputFeedsParse() throws Exception {
-        String page = "http://127.0.0.1:" + n8.getAddress().getPort() + "/page";
+        String page = "http://127.0.0.1:" + storage.getAddress().getPort() + "/page";
         var f = send(bare, "POST", "/fetch", req(Map.of("url", page)));
         assertEquals(200, f.statusCode());
         assertEquals("html", JSON.readTree(f.body()).get("format").asText());

@@ -27,11 +27,13 @@ import org.apache.tika.metadata.Metadata;
 import org.apache.tika.metadata.TIFF;
 import org.apache.tika.metadata.TikaCoreProperties;
 
-/** Xử lý request: {@code /ping}, {@code /parse}, chuyển tiếp sang N8, ghi lỗi ra JSON. */
+/** Xử lý request: {@code /ping}, {@code /parse}, gửi sang Lưu trữ và Điều khiển, ghi lỗi ra JSON. */
 public final class Api {
     private Api() {}
 
     private static final Pattern CHARSET = Pattern.compile("charset=\"?([^\";\\s]+)", Pattern.CASE_INSENSITIVE);
+    /** {@code format} Lưu trữ chấp nhận. */
+    private static final Pattern FORMAT = Pattern.compile("[a-z0-9][a-z0-9.+_-]{0,31}");
     private static final int MAX_BODY = 50 * 1024 * 1024;
     /** Jackson mặc định chặn chuỗi quá 20 triệu ký tự, tức body base64 ~20 MB; nới bằng MAX_BODY. */
     private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
@@ -142,7 +144,7 @@ public final class Api {
     }
 
     /** {@code POST /parse}: đọc body, bóc, chuyển tiếp; ghi một dòng nhật ký mỗi request. */
-    static Map<String, Object> parse(HttpExchange ex, String aggregatorUrl) {
+    static Map<String, Object> parse(HttpExchange ex, String storageUrl, String mediatorUrl) {
         long t0 = System.nanoTime();
         int status = 200;
         Object nLinks = 0;
@@ -165,7 +167,7 @@ public final class Api {
             if (b == null || !b.isObject()) throw new HttpError(400, "body phải là JSON object");
             url = b.path("url").asText("");
             format = b.path("format").asText("");
-            Map<String, Object> res = parse(b, aggregatorUrl);
+            Map<String, Object> res = parse(b, storageUrl, mediatorUrl);
             nLinks = res.get("n_out_links");
             return res;
         } catch (HttpError e) {
@@ -178,7 +180,7 @@ public final class Api {
         }
     }
 
-    private static Map<String, Object> parse(JsonNode b, String aggregatorUrl) {
+    private static Map<String, Object> parse(JsonNode b, String storageUrl, String mediatorUrl) {
         String url = b.path("url").asText("");
         String format = b.path("format").asText("");
         String encoding = b.path("encoding").asText("");
@@ -201,38 +203,57 @@ public final class Api {
             }
         }
 
-        Map<String, Object> rec = new LinkedHashMap<>();
+        Map<String, Object> rec = new LinkedHashMap<>();  // chính là body gửi Lưu trữ
         rec.put("url", url);
-        rec.put("format", format);
+        List<String> hustUrls = new ArrayList<>();
         int nLinks = 0;
         if (format.equals("html")) {
             String html = bytes == null ? content : new String(bytes, charsetOf(contentType));
             ContentBlock.Page p = ContentBlock.extract(html, base);
             if (p.title().isEmpty() && p.text().isEmpty()) throw new HttpError(422, "không bóc được chữ", url);
-            List<List<String>> links = new ArrayList<>();
-            for (ContentBlock.Link l : p.links()) links.add(List.of(l.url(), l.text()));
+            List<Map<String, String>> links = new ArrayList<>();
+            for (ContentBlock.Link l : p.links()) {
+                // Lưu trữ từ chối cả bản ghi nếu một url có dấu cách, chữ có dấu hay user@: mã hoá, bỏ url hỏng
+                URI u;
+                try {
+                    u = httpUri(l.url());
+                } catch (IllegalArgumentException e) {
+                    continue;
+                }
+                if (u.getHost() == null || u.getUserInfo() != null) continue;
+                String lu = u.toString();
+                links.add(Map.of("url", lu, "text", l.text()));
+                if (isHust(u.getHost()) && !hustUrls.contains(lu)) hustUrls.add(lu);
+            }
             nLinks = links.size();
-            rec.put("title", p.title());
-            rec.put("content", head(p.text()));
+            String title = p.title().isBlank() ? fileTitle(base) : p.title();
+            rec.put("format", "html");
+            rec.put("title", title);
+            // Lưu trữ bắt buộc có content: trang không có chữ thì dùng tiêu đề
+            rec.put("content", p.text().isEmpty() ? title : head(p.text()));
             rec.put("intro", p.intro());
             rec.put("out-links", links);
         } else {
             String ext = extOf(base, contentType);
-            DocumentText.Text t = DocumentText.extract(bytes == null ? content.getBytes(StandardCharsets.UTF_8) : bytes);
+            byte[] data = bytes == null ? content.getBytes(StandardCharsets.UTF_8) : bytes;
+            DocumentText.Text t = DocumentText.extract(data);
             if (t.mime().equals("application/octet-stream"))
                 throw new HttpError(415, "không đọc được tệp" + (ext.isEmpty() ? "" : " ." + ext));
+            String title = t.meta().get(TikaCoreProperties.TITLE);
+            title = title == null || title.isBlank() ? fileTitle(base) : title.strip();
             if (t.mime().startsWith("image/")) {
-                // ảnh: không OCR, chỉ tiêu đề và metadata
-                String title = t.meta().get(TikaCoreProperties.TITLE);
+                // ảnh: không OCR, chỉ tiêu đề và metadata; byte ảnh gửi Lưu trữ qua base64
                 String desc = t.meta().get(TikaCoreProperties.DESCRIPTION);
-                rec.put("ext", ext.isEmpty() ? t.mime().substring("image/".length()).replace("+xml", "") : ext);
-                rec.put("title", title == null || title.isBlank() ? fileTitle(base) : title.strip());
+                rec.put("format", formatOf(ext.isEmpty() ? t.mime().substring("image/".length()).replace("+xml", "") : ext));
+                rec.put("title", title);
                 rec.put("content", "");
+                rec.put("base64", Base64.getEncoder().encodeToString(data));
                 rec.put("intro", desc == null ? "" : desc.strip());
                 rec.put("metadata", imageMeta(t));
             } else {
                 if (t.text().isEmpty()) throw new HttpError(422, "không bóc được chữ", url);
-                rec.put("ext", ext);
+                rec.put("format", formatOf(ext));
+                rec.put("title", title);
                 rec.put("content", head(t.text()));
             }
         }
@@ -242,23 +263,38 @@ public final class Api {
         res.put("url", url);
         res.put("format", format);
         res.put("n_out_links", nLinks);
+        res.put("n_hust_links", hustUrls.size());
         res.put("chars", ((String) rec.get("content")).length());
-        if (aggregatorUrl.isEmpty()) res.put("record", rec);
-        else forward(aggregatorUrl, rec);
+        if (storageUrl.isEmpty()) res.put("record", rec);
+        else forward(storageUrl, rec, "Lưu trữ");
+        if (!mediatorUrl.isEmpty() && !hustUrls.isEmpty()) forward(mediatorUrl, Map.of("urls", hustUrls), "Điều khiển");
         return res;
     }
 
-    /** POST bản ghi sang N8, thử lại một lần. */
-    private static void forward(String aggregatorUrl, Map<String, Object> rec) {
+    /** Host là {@code hust.edu.vn} hoặc tên miền con của nó. */
+    private static boolean isHust(String host) {
+        String h = host.toLowerCase(Locale.ROOT);
+        return h.equals("hust.edu.vn") || h.endsWith(".hust.edu.vn");
+    }
+
+    /** Đuôi tệp làm {@code format} gửi Lưu trữ; rỗng hoặc không khớp {@code [a-z0-9][a-z0-9.+_-]{0,31}} thì "other". */
+    private static String formatOf(String ext) {
+        ext = ext.toLowerCase(Locale.ROOT);
+        return FORMAT.matcher(ext).matches() ? ext : "other";
+    }
+
+    /** POST JSON sang một service, thử lại một lần; lỗi thì 502 kèm tên service và lý do (có đoạn đầu body trả về). */
+    private static void forward(String target, Object body, String name) {
         String reason = "";
         for (int i = 0; i < 2; i++) {
             try {
-                var req = HttpRequest.newBuilder(URI.create(aggregatorUrl)).timeout(Duration.ofSeconds(10))
+                var req = HttpRequest.newBuilder(URI.create(target)).timeout(Duration.ofSeconds(10))
                         .header("Content-Type", "application/json; charset=utf-8")
-                        .POST(HttpRequest.BodyPublishers.ofByteArray(JSON.writeValueAsBytes(rec))).build();
-                int code = HTTP.send(req, HttpResponse.BodyHandlers.discarding()).statusCode();
-                if (code / 100 == 2) return;
-                reason = "HTTP " + code;
+                        .POST(HttpRequest.BodyPublishers.ofByteArray(JSON.writeValueAsBytes(body))).build();
+                var r = HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (r.statusCode() / 100 == 2) return;
+                String snip = r.body().strip();
+                reason = "HTTP " + r.statusCode() + (snip.isEmpty() ? "" : " " + (snip.length() <= 200 ? snip : snip.substring(0, 200)));
             } catch (IOException | IllegalArgumentException e) {
                 reason = e.toString();
             } catch (InterruptedException e) {
@@ -267,7 +303,7 @@ public final class Api {
                 break;
             }
         }
-        throw new HttpError(502, "Tổng hợp không nhận: " + reason);
+        throw new HttpError(502, name + " không nhận: " + reason);
     }
 
     /** Đuôi tệp: từ đoạn cuối đường dẫn, không có thì đổi từ MIME; không biết thì rỗng. */

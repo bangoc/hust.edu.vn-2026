@@ -5,6 +5,8 @@ curl --location 'http://10.177.29.73:2222/add' \
     "format": "html",
     "title": "Tin tức 1",
     "content": "Cơ hội thực tập có lương tại Nhật cho sinh viên chương trình HUST - KIOXIA.",
+    "base64": "database64://........",
+    "intro": "Intro của nội dung",
     "out-links": [
       {
         "url": "https://hust.edu.vn/tin-tuc2",
