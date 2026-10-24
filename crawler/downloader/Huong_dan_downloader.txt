@@ -1,14 +1,14 @@
 1. ĐỊA CHỈ
 --------------------------------------------------------------------------
 
-  API Tải về   : http://10.177.29.215:8800
-  Kho nội dung : http://10.177.29.215:9000   (không gọi trực tiếp,
+  API Tải về   : http://192.168.192.32:8800
+  Kho nội dung : http://192.168.192.32:9000   (không gọi trực tiếp,
                                               chỉ mở qua link content_ref)
 
   - Request và response đều là JSON (UTF-8).
   - Chỉ nhận URL thuộc *.hust.edu.vn.
   - IP có thể đổi khi N5 đổi mạng. Nếu không gọi được, liên hệ N5 để lấy IP mới.
-  - Kiểm tra kết nối: mở http://10.177.29.215:8800/ping trên trình duyệt.
+  - Kiểm tra kết nối: mở http://192.168.192.32:8800/ping trên trình duyệt.
     Không dùng lệnh ping (Windows chặn ping nhưng API vẫn chạy).
 
 
@@ -42,7 +42,7 @@
 BƯỚC 1 - Kiểm tra dịch vụ còn sống
 -----------------------------------
 
-  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/ping
+  curl -s -w " [HTTP %{http_code}]\n" http://192.168.192.32:8800/ping
 
   Kết quả:
     {"status":"đang chờ"} [HTTP 200]
@@ -61,16 +61,16 @@ BƯỚC 2 - Gửi URL cần tải  (POST /load)
 --------------------------------------
 
   Trang HTML:
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://hust.edu.vn/\"}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://hust.edu.vn/\"}"
 
   File PDF:
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://bktextile.hust.edu.vn/documents/71926/0/Chuong+trinh+dao+tao+ETM+Da+giay+14.5.19.pdf/fab59942-a4c6-4806-add3-152ad2f6cc24\"}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://bktextile.hust.edu.vn/documents/71926/0/Chuong+trinh+dao+tao+ETM+Da+giay+14.5.19.pdf/fab59942-a4c6-4806-add3-152ad2f6cc24\"}"
 
   File DOCX:
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://clc.hust.edu.vn/xmedia/2025/10/giay-uy-quyen.docx\"}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://clc.hust.edu.vn/xmedia/2025/10/giay-uy-quyen.docx\"}"
 
   Bắt tải lại kể cả khi nội dung chưa đổi (thêm "force": true):
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://hust.edu.vn/\",\"force\":true}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://hust.edu.vn/\",\"force\":true}"
 
   Kết quả:
     {
@@ -94,10 +94,10 @@ BƯỚC 3 - Xem kết quả  (GET /jobs/{job_id})
 
   Thay <job_id> bằng giá trị vừa copy:
 
-  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/jobs/<job_id>
+  curl -s -w " [HTTP %{http_code}]\n" http://192.168.192.32:8800/jobs/<job_id>
 
   Ví dụ:
-  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/jobs/10431d9b-4b1b-41fc-bd3d-eff1bf115bca
+  curl -s -w " [HTTP %{http_code}]\n" http://192.168.192.32:8800/jobs/10431d9b-4b1b-41fc-bd3d-eff1bf115bca
 
   Chạy lại lệnh này vài lần (cách nhau 2 giây) tới khi status là "done"
   hoặc "failed". Thứ tự: queued -> downloading -> storing -> done | failed.
@@ -117,7 +117,7 @@ BƯỚC 3 - Xem kết quả  (GET /jobs/{job_id})
       "content_type": "text/html; charset=utf-8",
       "extension": "html",
       "encoding": "ref",
-      "content_ref": "http://10.177.29.215:9000/hust-raw/raw/60b5ff8e0b37...?X-Amz-Algorithm=AWS4-HMAC-SHA256&...&X-Amz-Expires=900&X-Amz-Signature=8b2eb34e...",
+      "content_ref": "http://192.168.192.32:9000/hust-raw/raw/60b5ff8e0b37...?X-Amz-Algorithm=AWS4-HMAC-SHA256&...&X-Amz-Expires=900&X-Amz-Signature=8b2eb34e...",
       "object_key": "raw/60b5ff8e0b372533959b44df3d7a6fe741719b7a955f78339ad922bdf9a6ae08",
       "size": 218210,
       "sha256": "60b5ff8e0b372533959b44df3d7a6fe741719b7a955f78339ad922bdf9a6ae08",
@@ -143,7 +143,7 @@ BƯỚC 3 - Xem kết quả  (GET /jobs/{job_id})
       "format": "other",
       "extension": "pdf",
       "content_type": "application/pdf",
-      "content_ref": "http://10.177.29.215:9000/hust-raw/raw/fc39b400...?X-Amz-...",
+      "content_ref": "http://192.168.192.32:9000/hust-raw/raw/fc39b400...?X-Amz-...",
       "size": 456106,
       ...
     } [HTTP 200]
@@ -174,7 +174,7 @@ BƯỚC 4 - Tải nội dung về máy  (mở link content_ref)
 BƯỚC 5 - Xem thống kê  (GET /stats)
 -----------------------------------
 
-  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/stats
+  curl -s -w " [HTTP %{http_code}]\n" http://192.168.192.32:8800/stats
 
   Kết quả (rút gọn):
     {
@@ -191,41 +191,41 @@ BƯỚC 6 - Thử các trường hợp lỗi
 -------------------------------
 
   6.1 Body có trường lạ:
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://hust.edu.vn/\",\"wait\":true}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://hust.edu.vn/\",\"wait\":true}"
     -> {"error":{"code":"invalid_request","message":"Body của /load không hợp lệ"}} [HTTP 400]
 
   6.2 Thiếu url:
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{}"
     -> {"error":{"code":"invalid_request","message":"Body của /load không hợp lệ"}} [HTTP 400]
 
   6.3 JSON sai cú pháp:
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":"
     -> {"error":{"code":"bad_json","message":"JSON body không hợp lệ"}} [HTTP 400]
 
   6.4 Không phải http/https:
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"ftp://hust.edu.vn/file.pdf\"}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"ftp://hust.edu.vn/file.pdf\"}"
     -> {"error":{"code":"invalid_url","message":"Chỉ hỗ trợ URL http hoặc https"}} [HTTP 400]
 
   6.5 Ngoài miền hust.edu.vn:
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://google.com/\"}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://google.com/\"}"
     -> {"error":{"code":"blocked_host","message":"Host google.com không nằm trong danh sách cho phép"}} [HTTP 400]
 
   6.6 Địa chỉ nội bộ:
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"http://127.0.0.1/\"}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"http://127.0.0.1/\"}"
     -> {"error":{"code":"blocked_host","message":"Host 127.0.0.1 không nằm trong danh sách cho phép"}} [HTTP 400]
 
   6.7 job_id không tồn tại (hoặc job đã quá 1 giờ, hoặc dịch vụ vừa khởi động lại):
-  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/jobs/00000000-0000-0000-0000-000000000000
+  curl -s -w " [HTTP %{http_code}]\n" http://192.168.192.32:8800/jobs/00000000-0000-0000-0000-000000000000
     -> {"error":{"code":"not_found","message":"Không tìm thấy job 00000000-0000-0000-0000-000000000000"}} [HTTP 404]
 
   6.8 Trang không tồn tại (gửi xong thì làm bước 3 với job_id nhận được):
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://soict.hust.edu.vn/khong-ton-tai-abc\"}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://soict.hust.edu.vn/khong-ton-tai-abc\"}"
     -> bước 3 trả:
        {"status":"failed", ... ,"content_ref":null,"auth_required":false,
         "error":{"code":"download_error","message":"Nguồn trả HTTP 404"}} [HTTP 200]
 
   6.9 Trang cần đăng nhập (gửi xong thì làm bước 3):
-  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://lms.hust.edu.vn/my/\"}"
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://192.168.192.32:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://lms.hust.edu.vn/my/\"}"
     -> bước 3 trả:
        {"status":"failed","final_url":"https://lms.hust.edu.vn/my/", ... ,
         "content_ref":null,"auth_required":true,
@@ -286,7 +286,7 @@ BƯỚC 6 - Thử các trường hợp lỗi
 
     import time, requests
 
-    DOWNLOADER = "http://10.177.29.215:8800"
+    DOWNLOADER = "http://192.168.192.32:8800"
     READER_URL = "http://<ip-N1>:6600/parse"
 
     def submit(url, retries=5):
@@ -335,7 +335,7 @@ BƯỚC 6 - Thử các trường hợp lỗi
       "format": "html",
       "extension": "html",
       "content_type": "text/html; charset=utf-8",
-      "content_ref": "http://10.177.29.215:9000/hust-raw/raw/...?X-Amz-Signature=...",
+      "content_ref": "http://192.168.192.32:9000/hust-raw/raw/...?X-Amz-Signature=...",
       "size": 218210,
       "sha256": "60b5ff8e...",
       "fetched_at": "2026-10-24T11:31:07.462Z"
@@ -380,7 +380,7 @@ BƯỚC 6 - Thử các trường hợp lỗi
 --------------------------------------------------------------------------
 
   - Bộ test Postman: hust-content-downloader.postman_collection.json
-    Import vào Postman, đổi biến base = http://10.177.29.215:8800, rồi Run.
+    Import vào Postman, đổi biến base = http://192.168.192.32:8800, rồi Run.
 
   - Mock API (để code trước khi kết nối hệ thống thật):
     Chạy trên máy mình bằng "npm run mock:api" trong thư mục src/downloader
