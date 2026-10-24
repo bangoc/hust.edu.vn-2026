@@ -1,0 +1,50 @@
+# Local stack: API /add + MongoDB. No Dockerfile required.
+# First startup builds the API using Maven; dependencies are cached in a named volume.
+services:
+  storage:
+    image: maven:3.9.9-eclipse-temurin-21
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        mvn -B -q -DskipTests package
+        exec java -jar target/storage-0.1.0.jar
+    environment:
+      SERVER_PORT: "2222"
+      MONGODB_URI: mongodb://mongo:27017/HUST_2026_IT4863?serverSelectionTimeoutMS=5000
+    ports:
+      - "${STORAGE_PORT:-2222}:2222"
+    volumes:
+      - ./pom.xml:/app/pom.xml:ro
+      - ./src:/app/src:ro
+      - storage_target:/app/target
+      - maven_cache:/root/.m2
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7.0
+    environment:
+      MONGO_INITDB_DATABASE: HUST_2026_IT4863
+    # Optional access from the host, separate from an existing MongoDB on port 27017.
+    ports:
+      - "127.0.0.1:${MONGO_PORT:-27018}:27017"
+    volumes:
+      - mongo_data:/data/db
+      # DDL runs automatically only when the Mongo data volume is first initialized.
+      - ./document/ddl_create_document.js:/docker-entrypoint-initdb.d/01-schema.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand({ping: 1}).ok ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  maven_cache:
+  storage_target:

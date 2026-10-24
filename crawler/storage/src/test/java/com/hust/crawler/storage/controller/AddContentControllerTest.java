@@ -81,12 +81,22 @@ class AddContentControllerTest {
         }
         verifyNoInteractions(service);
     }
-    @Test void acceptsIntro() throws Exception {
-        String request = body("[]").replace("\"out-links\":", "\"intro\":\"Giới thiệu bài viết\",\"out-links\":");
-        mvc.perform(post("/add").contentType("application/json").content(request))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.intro").value("Giới thiệu bài viết"));
+    @Test void usesOnlyOutlinkTextWithoutResourceIntro() throws Exception {
+        mvc.perform(post("/add").contentType("application/json").content(body("""
+            [{"url":"https://hust.edu.vn/2","text":"Giới thiệu liên kết"}]
+            """)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.intro").doesNotExist())
+                .andExpect(jsonPath("$['out-links'][0].text").value("Giới thiệu liên kết"));
         verify(service).save("https://hust.edu.vn/tin-tuc1", "html", "Tin tức 1", "Nội dung bóc tách",
-                null, "Giới thiệu bài viết", List.of());
+                null, null, List.of(new SubmittedContent.OutLink("https://hust.edu.vn/2", "Giới thiệu liên kết")));
+    }
+    @Test void acceptsOriginForPicturesAndOtherDocuments() throws Exception {
+        for (String format : List.of("png", "pdf")) {
+            String request = body("[]").replace("\"HTML\"", "\"" + format + "\"")
+                    .replace("\"out-links\":", "\"origin\":\"https://hust.edu.vn/source\",\"out-links\":");
+            mvc.perform(post("/add").contentType("application/json").content(request))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.origin").value("https://hust.edu.vn/source"));
+        }
     }
     @Test void reportsUnavailableDatabase() throws Exception {
         when(service.save(anyString(),anyString(),anyString(),anyString(),nullable(String.class),nullable(String.class),anyList()))

@@ -3,4 +3,4 @@ server:
 spring:
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/it4863?serverSelectionTimeoutMS=5000}
+      uri: ${MONGODB_URI:mongodb://10.177.29.134:27017/HUST_2026_IT4863?serverSelectionTimeoutMS=5000}

@@ -9,7 +9,7 @@ public record AddContentRequest(
         String title,
         String content,
         String base64,
-        String intro,
+        String origin,
         @JsonProperty("out-links") List<OutLinkRequest> outLinks) {
 
     public record OutLinkRequest(String url, String text) {}
