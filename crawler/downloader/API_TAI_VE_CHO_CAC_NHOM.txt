@@ -1,0 +1,393 @@
+==========================================================================
+ DỊCH VỤ TẢI VỀ (N5) - API MẪU VÀ CÁCH SỬ DỤNG CHO CÁC NHÓM
+ Cập nhật: 24/10/2026
+==========================================================================
+
+1. ĐỊA CHỈ
+--------------------------------------------------------------------------
+
+  API Tải về   : http://10.177.29.215:8800
+  Kho nội dung : http://10.177.29.215:9000   (không gọi trực tiếp,
+                                              chỉ mở qua link content_ref)
+
+  - Request và response đều là JSON (UTF-8).
+  - Chỉ nhận URL thuộc *.hust.edu.vn.
+  - IP có thể đổi khi N5 đổi mạng. Nếu không gọi được, liên hệ N5 để lấy IP mới.
+  - Kiểm tra kết nối: mở http://10.177.29.215:8800/ping trên trình duyệt.
+    Không dùng lệnh ping (Windows chặn ping nhưng API vẫn chạy).
+
+
+2. TÓM TẮT CÁC API
+--------------------------------------------------------------------------
+
+  GET  /ping          Xem dịch vụ đang rảnh hay bận
+  POST /load          Gửi 1 URL cần tải -> trả job_id ngay, tải chạy ở nền
+  GET  /jobs/{job_id} Xem kết quả: trạng thái, định dạng, link nội dung
+  GET  /stats         Thống kê số job, số byte, lỗi
+
+  Luồng:  BAT gửi POST /load  ->  Tải về tải trang/file  ->  Tải về TỰ GỬI nội dung
+          sang Đọc nội dung (N1, POST http://10.177.29.30:6600/parse)
+
+  Muốn xem kết quả: GET /jobs/{job_id} tới khi status = "done" hoặc "failed".
+  Trường "forwarded": true nghĩa là N1 đã nhận nội dung.
+
+
+3. TEST API BẰNG CURL (copy - dán vào terminal)
+--------------------------------------------------------------------------
+
+  Các lệnh dưới đây dán được thẳng vào:
+    - CMD (Command Prompt) trên Windows 10/11
+    - Git Bash, Linux, macOS
+
+  Đang dùng PowerShell: gõ  cmd  rồi Enter để chuyển sang CMD trước khi dán.
+  (Trong PowerShell, "curl" là một lệnh khác và dấu nháy bị hiểu khác.)
+
+  Phần  -w " [HTTP %{http_code}]\n"  trong mỗi lệnh chỉ để in thêm mã HTTP
+  ở cuối kết quả. Kết quả thật in trên 1 dòng; ở đây ngắt dòng cho dễ đọc.
+  Nếu chép lệnh vào file .bat để chạy thì đổi mọi dấu % thành %%.
+
+
+BƯỚC 1 - Kiểm tra dịch vụ còn sống
+-----------------------------------
+
+  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/ping
+
+  Kết quả:
+    {"status":"đang chờ"} [HTTP 200]
+
+  status có 3 giá trị:
+    "đang chờ"  : không có job nào
+    "đang tải"  : đang chạy job, vẫn nhận thêm được
+    "đang bận"  : cả 2 luồng đang chạy và có job phải chờ
+                  (vẫn nhận thêm được tới khi hàng đợi đầy, xem lỗi 503)
+
+  Không ra kết quả (treo rồi báo lỗi kết nối) = máy bạn không tới được máy N5.
+  Báo N5 kèm kết quả lệnh  ipconfig  của máy bạn.
+
+
+BƯỚC 2 - Gửi URL cần tải  (POST /load)
+--------------------------------------
+
+  Trang HTML:
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://hust.edu.vn/\"}"
+
+  File PDF:
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://bktextile.hust.edu.vn/documents/71926/0/Chuong+trinh+dao+tao+ETM+Da+giay+14.5.19.pdf/fab59942-a4c6-4806-add3-152ad2f6cc24\"}"
+
+  File DOCX:
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://clc.hust.edu.vn/xmedia/2025/10/giay-uy-quyen.docx\"}"
+
+  Bắt tải lại kể cả khi nội dung chưa đổi (thêm "force": true):
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://hust.edu.vn/\",\"force\":true}"
+
+  Kết quả:
+    {
+      "job_id": "10431d9b-4b1b-41fc-bd3d-eff1bf115bca",
+      "status": "queued",
+      "status_url": "/jobs/10431d9b-4b1b-41fc-bd3d-eff1bf115bca",
+      "deduplicated": false
+    } [HTTP 202]
+
+  -> Copy giá trị job_id để dùng ở bước 3.
+
+  Ghi chú:
+    - Body chỉ được có "url", và "force" nếu cần. Thêm trường khác -> lỗi 400.
+    - Gửi trùng 1 URL trong lúc nó đang được tải: trả lại đúng job cũ,
+      kèm "deduplicated": true.
+    - Lỗi 503 queue_full: hàng đợi đầy (22 job), đợi vài giây rồi gửi lại.
+
+
+BƯỚC 3 - Xem kết quả  (GET /jobs/{job_id})
+-------------------------------------------
+
+  Thay <job_id> bằng giá trị vừa copy:
+
+  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/jobs/<job_id>
+
+  Ví dụ:
+  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/jobs/10431d9b-4b1b-41fc-bd3d-eff1bf115bca
+
+  Chạy lại lệnh này vài lần (cách nhau 2 giây) tới khi status là "done"
+  hoặc "failed". Thứ tự: queued -> downloading -> storing -> done | failed.
+  Trang HTML thường xong sau 3-8 giây, file nhỏ sau 1-2 giây.
+
+  a) Đang chạy:
+    {"job_id":"10431d9b-...","status":"downloading", ... ,"content_ref":null, ...} [HTTP 200]
+
+  b) Xong - trang HTML:
+    {
+      "job_id": "e3a596bd-7f3c-4c75-b72f-502c456f0240",
+      "status": "done",
+      "url": "https://hust.edu.vn/",
+      "final_url": "https://hust.edu.vn/",
+      "url_key": "86862aa4008f6c70dc6eac4ad1eb8fcf9d488970b5c6e974e757a3023411dfdf",
+      "format": "html",
+      "content_type": "text/html; charset=utf-8",
+      "extension": "html",
+      "encoding": "ref",
+      "content_ref": "http://10.177.29.215:9000/hust-raw/raw/60b5ff8e0b37...?X-Amz-Algorithm=AWS4-HMAC-SHA256&...&X-Amz-Expires=900&X-Amz-Signature=8b2eb34e...",
+      "object_key": "raw/60b5ff8e0b372533959b44df3d7a6fe741719b7a955f78339ad922bdf9a6ae08",
+      "size": 218210,
+      "sha256": "60b5ff8e0b372533959b44df3d7a6fe741719b7a955f78339ad922bdf9a6ae08",
+      "http_status": 200,
+      "fetched_at": "2026-10-24T11:31:07.462Z",
+      "deduplicated": false,
+      "not_modified": false,
+      "auth_required": false,
+      "manifest_invalid": false,
+      "redownloaded": false,
+      "content_changed": true,
+      "duplicate_content": false,
+      "forced": false,
+      "previous_sha256": "fcf5897b9b81ac1b49b9e8f5a2eae1fa7650263287e345d1b59ea643e298e0f1",
+      "previous_fetched_at": "2026-10-24T11:25:04.289Z",
+      "forwarded": true,
+      "forward_error": null,
+      "error": null
+    } [HTTP 200]
+
+  c) Xong - file PDF (các trường khác giống trên):
+    {
+      "status": "done",
+      "url": "https://bktextile.hust.edu.vn/documents/71926/0/Chuong+trinh+dao+tao+ETM+Da+giay+14.5.19.pdf/fab59942-a4c6-4806-add3-152ad2f6cc24",
+      "format": "other",
+      "extension": "pdf",
+      "content_type": "application/pdf",
+      "content_ref": "http://10.177.29.215:9000/hust-raw/raw/fc39b400...?X-Amz-...",
+      "size": 456106,
+      ...
+    } [HTTP 200]
+
+
+BƯỚC 4 - Tải nội dung về máy  (mở link content_ref)
+----------------------------------------------------
+
+  Copy NGUYÊN giá trị content_ref ở bước 3 (không sửa), đặt trong dấu nháy kép
+  vì link có ký tự &:
+
+  curl -s -w "[HTTP %{http_code}]\n" -o trang.html "<content_ref>"
+
+  Với file PDF thì đổi tên file lưu:
+  curl -s -w "[HTTP %{http_code}]\n" -o tailieu.pdf "<content_ref>"
+
+  Kết quả:
+    [HTTP 200]   -> file trang.html / tailieu.pdf nằm ở thư mục đang đứng
+    [HTTP 403]   -> link hết hạn (quá 15 phút) hoặc bị sửa:
+                    chạy lại bước 3 để lấy link mới
+    Treo / lỗi kết nối -> máy bạn không tới được cổng 9000 của máy N5
+
+  Nội dung:
+    - HTML: mã HTML đã chạy JavaScript (render bằng Chrome headless), UTF-8
+    - PDF/DOCX/...: file gốc, mở bằng phần mềm tương ứng
+
+
+BƯỚC 5 - Xem thống kê  (GET /stats)
+-----------------------------------
+
+  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/stats
+
+  Kết quả (rút gọn):
+    {
+      "queue": {"queued":0,"active":0,"concurrency":2,"queueSize":20,
+                "capacity":22,"totalJobs":1,"doneJobs":1,"failedJobs":0},
+      "jobs":  {"jobsCreated":1,"jobsDone":1,"jobsFailed":0,
+                "htmlDownloads":0,"documentDownloads":1,
+                "downloadedBytes":16828,"errorCounts":{}, ...},
+      "browser": {"activePages":0,"pagesServed":0,"maxPages":2,"connected":false}
+    } [HTTP 200]
+
+
+BƯỚC 6 - Thử các trường hợp lỗi
+-------------------------------
+
+  6.1 Body có trường lạ:
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://hust.edu.vn/\",\"wait\":true}"
+    -> {"error":{"code":"invalid_request","message":"Body của /load không hợp lệ"}} [HTTP 400]
+
+  6.2 Thiếu url:
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{}"
+    -> {"error":{"code":"invalid_request","message":"Body của /load không hợp lệ"}} [HTTP 400]
+
+  6.3 JSON sai cú pháp:
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":"
+    -> {"error":{"code":"bad_json","message":"JSON body không hợp lệ"}} [HTTP 400]
+
+  6.4 Không phải http/https:
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"ftp://hust.edu.vn/file.pdf\"}"
+    -> {"error":{"code":"invalid_url","message":"Chỉ hỗ trợ URL http hoặc https"}} [HTTP 400]
+
+  6.5 Ngoài miền hust.edu.vn:
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://google.com/\"}"
+    -> {"error":{"code":"blocked_host","message":"Host google.com không nằm trong danh sách cho phép"}} [HTTP 400]
+
+  6.6 Địa chỉ nội bộ:
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"http://127.0.0.1/\"}"
+    -> {"error":{"code":"blocked_host","message":"Host 127.0.0.1 không nằm trong danh sách cho phép"}} [HTTP 400]
+
+  6.7 job_id không tồn tại (hoặc job đã quá 1 giờ, hoặc dịch vụ vừa khởi động lại):
+  curl -s -w " [HTTP %{http_code}]\n" http://10.177.29.215:8800/jobs/00000000-0000-0000-0000-000000000000
+    -> {"error":{"code":"not_found","message":"Không tìm thấy job 00000000-0000-0000-0000-000000000000"}} [HTTP 404]
+
+  6.8 Trang không tồn tại (gửi xong thì làm bước 3 với job_id nhận được):
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://soict.hust.edu.vn/khong-ton-tai-abc\"}"
+    -> bước 3 trả:
+       {"status":"failed", ... ,"content_ref":null,"auth_required":false,
+        "error":{"code":"download_error","message":"Nguồn trả HTTP 404"}} [HTTP 200]
+
+  6.9 Trang cần đăng nhập (gửi xong thì làm bước 3):
+  curl -s -w " [HTTP %{http_code}]\n" -X POST http://10.177.29.215:8800/load -H "Content-Type: application/json" -d "{\"url\":\"https://lms.hust.edu.vn/my/\"}"
+    -> bước 3 trả:
+       {"status":"failed","final_url":"https://lms.hust.edu.vn/my/", ... ,
+        "content_ref":null,"auth_required":true,
+        "error":{"code":"auth_required","message":"Nguồn yêu cầu đăng nhập để truy cập nội dung"}} [HTTP 200]
+
+
+Ý NGHĨA CÁC TRƯỜNG KẾT QUẢ (bước 3)
+------------------------------------
+
+    format        "html" hoặc "other"
+    extension     định dạng cụ thể: html, pdf, doc, docx, xls, xlsx, ppt, pptx,
+                  txt, csv, zip, rar, ...
+    content_ref   LINK LẤY NỘI DUNG. GET thẳng, không cần đăng nhập.
+                  HẾT HẠN SAU 15 PHÚT -> gọi lại /jobs/{job_id} để lấy link mới.
+    final_url     URL sau chuyển hướng (dùng làm gốc để chuyển link tương đối
+                  thành tuyệt đối)
+    sha256        mã băm nội dung; 2 URL cùng sha256 là trùng nội dung
+    size          số byte (file tối đa 20 MB, HTML tối đa 5 MB)
+    not_modified / redownloaded / duplicate_content
+                  true = nội dung giống lần tải trước
+    content_changed
+                  true = cùng URL nhưng nội dung đã đổi so với lần trước
+    auth_required true = trang cần đăng nhập, không có nội dung
+    forwarded     true  = đã gửi nội dung sang N1 và N1 nhận (HTTP 2xx)
+                  false = gửi sang N1 thất bại (xem forward_error); job vẫn "done",
+                          nội dung vẫn lấy được qua content_ref
+                  null  = job chưa xong / thất bại, nên không gửi
+    forward_error lý do gửi sang N1 thất bại, ví dụ
+                  {"code":"forward_error","message":"Module đọc trả HTTP 500"}
+
+  Các mã lỗi khi status = "failed":
+    download_error     nguồn trả lỗi (404, 403, 500...) -> bỏ URL
+    auth_required      trang cần đăng nhập              -> bỏ URL
+    robots_disallowed  robots.txt cấm                    -> bỏ URL
+    timeout            quá thời gian                     -> có thể gửi lại sau
+    too_large          file vượt giới hạn                -> bỏ URL
+    render_error       Chrome lỗi                        -> có thể gửi lại sau
+    storage_error      lỗi ghi kho                       -> báo N5
+  (Lỗi tạm thời như 429, 5xx đã được Tải về tự thử lại 3 lần.)
+
+
+4. CÁCH CÁC NHÓM SỬ DỤNG
+--------------------------------------------------------------------------
+
+4.1 Nhóm Điều khiển (BAT)
+--------------------------
+
+  Việc cần làm: CHỈ CẦN GỬI URL. Tải về tự gửi nội dung sang N1.
+
+    POST /load {"url": ...}
+      202 -> đã nhận, xong việc (có thể lưu job_id nếu muốn tra kết quả)
+      503 -> hàng đợi đầy, đợi vài giây rồi gửi lại
+      400 -> URL sai / bị chặn, bỏ URL
+      không kết nối được -> dịch vụ đang tắt, thử lại sau
+
+  Không cần chuyển kết quả sang N1 nữa.
+
+  Muốn kiểm tra (không bắt buộc): GET /jobs/{job_id}
+    status "done" + forwarded true  -> N1 đã nhận nội dung
+    status "done" + forwarded false -> tải xong nhưng N1 không nhận, xem forward_error
+    status "failed"                 -> tải lỗi (404, cần đăng nhập...), bỏ URL
+
+  Lưu ý:
+    - Dịch vụ nhận tối đa 22 job cùng lúc (2 chạy + 20 chờ). Gặp 503 thì
+      giãn tốc độ gửi.
+    - Nên lọc bớt URL ảnh/video (.jpg, .png, .mp4...) trước khi gửi: tải về
+      vẫn được nhưng N1 không đọc được nội dung từ ảnh.
+
+  Code mẫu Python:
+
+    import time, requests
+
+    DOWNLOADER = "http://10.177.29.215:8800"
+
+    def submit(url, retries=5):
+        """Gửi URL. Trả job_id, hoặc None nếu hàng đợi vẫn đầy sau vài lần thử."""
+        for _ in range(retries):
+            r = requests.post(f"{DOWNLOADER}/load", json={"url": url}, timeout=10)
+            if r.status_code == 202:
+                return r.json()["job_id"]
+            if r.status_code == 503:              # queue_full -> đợi rồi thử lại
+                time.sleep(3)
+                continue
+            raise ValueError(r.json()["error"])   # 400: URL sai / bị chặn -> bỏ URL
+        return None
+
+    job_id = submit("https://hust.edu.vn/")
+    # Xong. Tải về sẽ tự gửi nội dung sang N1 khi tải xong.
+
+
+4.2 Nhóm Đọc nội dung (N1)
+---------------------------
+
+  Tải về tự gọi  POST http://10.177.29.30:6600/parse  sau mỗi job tải xong,
+  ĐÚNG ĐỊNH DẠNG trong Readme_reader.md của N1:
+
+  Trang HTML:
+    {
+      "url": "https://hust.edu.vn/vi/news/tin-tuc-su-kien/bai-khac-656090.html",
+      "format": "html",
+      "encoding": "text",
+      "content": "<!DOCTYPE html><html>...</html>"
+    }
+
+  File (pdf, docx, xlsx, ...):
+    {
+      "url": "https://clc.hust.edu.vn/xmedia/2025/10/giay-uy-quyen.docx",
+      "format": "other",
+      "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "encoding": "base64",
+      "content": "UEsDBBQABgAIAAAAIQ..."
+    }
+
+  Ghi chú:
+    - "url" là đúng URL mà BAT gửi (chưa qua chuyển hướng).
+    - HTML là mã đã chạy JavaScript (render bằng Chrome headless), UTF-8.
+    - File tối đa 20 MB (base64 khoảng 27 MB) -> /parse cần nhận được body cỡ này.
+    - N1 trả 2xx = đã nhận. Trả 5xx/429 hoặc không kết nối được: Tải về thử lại
+      3 lần. Trả 4xx: Tải về không gửi lại.
+    - Chỉ gửi job tải thành công; trang 404 hoặc cần đăng nhập không gửi.
+    - Cùng 1 URL được BAT gửi lại thì N1 nhận lại nội dung (kể cả khi chưa đổi).
+    - Đã chạy thử với N1 thật lúc 20:14 ngày 24/10: 1 trang HTML (128 863 byte)
+      và 1 file DOCX (16 828 byte), N1 đều trả HTTP 200.
+
+
+4.3 Các nhóm khác (N8, N10)
+----------------------------
+
+  Không gọi trực tiếp Tải về. Nhận dữ liệu qua N1 như sơ đồ chung.
+
+
+5. CÔNG CỤ HỖ TRỢ (nhắn N5 để lấy)
+--------------------------------------------------------------------------
+
+  - Bộ test Postman: hust-content-downloader.postman_collection.json
+    Import vào Postman, đổi biến base = http://10.177.29.215:8800, rồi Run.
+
+  - Mock API (để code trước khi kết nối hệ thống thật):
+    Chạy trên máy mình bằng "npm run mock:api" trong thư mục src/downloader
+    (chỉ cần Node.js >= 22.12, không cần Docker). Địa chỉ http://localhost:8899,
+    cùng API và định dạng JSON với bản thật, job tự xong sau khoảng 1,25 giây.
+      URL kết thúc bằng /mock-fail          -> job failed, download_error
+      URL kết thúc bằng /mock-auth-required -> job failed, auth_required
+
+
+6. LƯU Ý QUAN TRỌNG
+--------------------------------------------------------------------------
+
+  - /load không chờ tải xong; Tải về tải ở nền rồi TỰ GỬI nội dung sang N1.
+  - Kết quả từng URL tra qua /jobs/{job_id}; job được giữ 1 giờ.
+  - content_ref (link nội dung trong kho của Tải về) hết hạn sau 15 phút. N1
+    không cần dùng link này vì nội dung đã được gửi kèm trong /parse.
+  - Máy BAT cần truy cập được cổng 8800. Cổng 9000 chỉ cần khi muốn tự mở
+    content_ref.
+==========================================================================

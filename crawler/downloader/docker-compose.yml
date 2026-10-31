@@ -1,0 +1,89 @@
+name: hust-downloader
+
+x-content-downloader-common: &content-downloader-common
+  image: hust-content-downloader:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+    NODE_ENV: production
+    PORT: "8800"
+    S3_ENDPOINT: http://minio:9000
+    S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+    S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+    S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    S3_BUCKET: ${S3_BUCKET:-hust-raw}
+    S3_REGION: ${S3_REGION:-us-east-1}
+    S3_FORCE_PATH_STYLE: "true"
+    PRESIGN_TTL_SECONDS: ${PRESIGN_TTL_SECONDS:-900}
+    MAX_FILE_BYTES: ${MAX_FILE_BYTES:-20971520}
+    MAX_HTML_BYTES: ${MAX_HTML_BYTES:-5242880}
+    MAX_CONCURRENT: ${MAX_CONCURRENT:-2}
+    QUEUE_SIZE: ${QUEUE_SIZE:-20}
+    PROBE_MODE: ${PROBE_MODE:-auto}
+    PROBE_TIMEOUT_MS: ${PROBE_TIMEOUT_MS:-15000}
+    HTML_TIMEOUT_MS: ${HTML_TIMEOUT_MS:-30000}
+    FILE_TIMEOUT_MS: ${FILE_TIMEOUT_MS:-60000}
+    RETRY_COUNT: ${RETRY_COUNT:-3}
+    RETRY_BASE_MS: ${RETRY_BASE_MS:-500}
+    RETRY_MAX_MS: ${RETRY_MAX_MS:-8000}
+    RETRY_JITTER_MS: ${RETRY_JITTER_MS:-250}
+    HOST_DELAY_MS: ${HOST_DELAY_MS:-500}
+    ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-}
+    AUTH_LOGIN_PATH_SEGMENTS: ${AUTH_LOGIN_PATH_SEGMENTS:-login,signin,sign-in,dang-nhap,dangnhap,sso,oauth}
+    RESPECT_ROBOTS: ${RESPECT_ROBOTS:-false}
+    CHROME_BIN: /usr/bin/chromium
+    BLOCK_RESOURCE_TYPES: ${BLOCK_RESOURCE_TYPES:-image,media,font}
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    USER_AGENT: ${USER_AGENT:-HUST-Content-Downloader/1.0}
+    JOB_TTL_MS: ${JOB_TTL_MS:-3600000}
+    MAX_JOBS: ${MAX_JOBS:-1000}
+    READER_URL: ${READER_URL:-}
+    READER_TIMEOUT_MS: ${READER_TIMEOUT_MS:-30000}
+    READER_RETRY_COUNT: ${READER_RETRY_COUNT:-3}
+  depends_on:
+    minio:
+      condition: service_started
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - >-
+        node -e "fetch('http://127.0.0.1:8800/ping').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 15s
+  restart: unless-stopped
+  shm_size: 512mb
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:size=256m
+
+services:
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+  content-downloader:
+    <<: *content-downloader-common
+    ports:
+      - "8800:8800"
+
+  content-downloader-replica:
+    <<: *content-downloader-common
+    profiles: ["two-instances"]
+    ports:
+      - "8801:8800"
+
+volumes:
+  minio-data:

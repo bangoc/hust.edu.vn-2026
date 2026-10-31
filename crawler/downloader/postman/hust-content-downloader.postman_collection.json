@@ -1,0 +1,1332 @@
+{
+  "info": {
+    "name": "HUST Content Downloader",
+    "description": "Bộ test cho dịch vụ tải nội dung (content-downloader).\n\nCách chạy: chuột phải collection > Run collection > Run. Các bước \"Chờ ...\" tự hỏi lại tới khi job xong.\nChạy tay từng request: gửi \"Gửi ...\" trước, sau đó gửi \"Chờ ...\" (bấm Send lại nếu job chưa xong).\n\nBiến: sửa ở tab Variables của collection. Thư mục 7 cần chạy mock bằng `npm run mock:api`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base",
+      "value": "http://localhost:8800"
+    },
+    {
+      "key": "base2",
+      "value": "http://localhost:8801"
+    },
+    {
+      "key": "minio",
+      "value": "http://localhost:9000"
+    },
+    {
+      "key": "mock",
+      "value": "http://localhost:8899"
+    },
+    {
+      "key": "url_html",
+      "value": "https://hust.edu.vn/"
+    },
+    {
+      "key": "url_pdf",
+      "value": "https://bktextile.hust.edu.vn/documents/71926/0/Chuong+trinh+dao+tao+ETM+Da+giay+14.5.19.pdf/fab59942-a4c6-4806-add3-152ad2f6cc24"
+    },
+    {
+      "key": "url_docx",
+      "value": "https://clc.hust.edu.vn/xmedia/2025/10/giay-uy-quyen.docx"
+    },
+    {
+      "key": "url_dedup",
+      "value": "https://soict.hust.edu.vn/"
+    },
+    {
+      "key": "url_404",
+      "value": "https://soict.hust.edu.vn/trang-khong-ton-tai-de-test"
+    },
+    {
+      "key": "url_auth",
+      "value": "https://lms.hust.edu.vn/my/"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Sức khỏe",
+      "description": "Kiểm tra 2 bản đang chạy.",
+      "item": [
+        {
+          "name": "Ping bản 1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('status hợp lệ', () => pm.expect(pm.response.json().status).to.be.oneOf(['đang chờ', 'đang tải', 'đang bận']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/ping"
+          }
+        },
+        {
+          "name": "Ping bản 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base2}}/ping"
+          }
+        },
+        {
+          "name": "Thống kê",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Có queue, jobs, browser', () => pm.expect(pm.response.json()).to.include.keys('queue', 'jobs', 'browser'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/stats"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Trang HTML",
+      "description": "Render bằng Chrome headless, lưu MinIO, đọc lại qua content_ref.",
+      "item": [
+        {
+          "name": "Gửi trang HTML",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('Có job_id', () => pm.expect(j.job_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('job_html', j.job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{url_html}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Chờ trang HTML",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('status = done', () => pm.expect(j.status).to.eql('done'));",
+                  "  pm.test('format = html', () => pm.expect(j.format).to.eql('html'));",
+                  "  pm.test('Có content_ref', () => pm.expect(j.content_ref).to.be.a('string'));",
+                  "  pm.collectionVariables.set('ref_html', j.content_ref);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/jobs/{{job_html}}"
+          }
+        },
+        {
+          "name": "Đọc nội dung HTML qua content_ref",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Là HTML', () => pm.expect(pm.response.text().toLowerCase()).to.include('<html'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ref_html}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. File PDF",
+      "description": "URL không có đuôi .pdf ở cuối: nhận dạng qua Content-Type, tải thẳng.",
+      "item": [
+        {
+          "name": "Gửi PDF",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('Có job_id', () => pm.expect(j.job_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('job_pdf', j.job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{url_pdf}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Chờ PDF",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('status = done', () => pm.expect(j.status).to.eql('done'));",
+                  "  pm.test('format = other, extension = pdf', () => { pm.expect(j.format).to.eql('other'); pm.expect(j.extension).to.eql('pdf'); });",
+                  "  pm.collectionVariables.set('ref_pdf', j.content_ref);",
+                  "  pm.collectionVariables.set('sha_pdf', j.sha256);",
+                  "  pm.collectionVariables.set('object_pdf', j.object_key);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/jobs/{{job_pdf}}"
+          }
+        },
+        {
+          "name": "Đọc PDF qua content_ref",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Bắt đầu bằng %PDF', () => pm.expect(pm.response.text().startsWith('%PDF')).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ref_pdf}}"
+          }
+        },
+        {
+          "name": "Đọc PDF KHÔNG có chữ ký (phải bị chặn)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403: bucket private', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{minio}}/hust-raw/{{object_pdf}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. File DOCX",
+      "description": "",
+      "item": [
+        {
+          "name": "Gửi DOCX",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('Có job_id', () => pm.expect(j.job_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('job_docx', j.job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{url_docx}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Chờ DOCX",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('status = done', () => pm.expect(j.status).to.eql('done'));",
+                  "  pm.test('extension = docx', () => pm.expect(j.extension).to.eql('docx'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/jobs/{{job_docx}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Tải lại và chống trùng",
+      "description": "Chạy sau thư mục 3 (cần sha_pdf).",
+      "item": [
+        {
+          "name": "Gửi lại PDF (không force)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('Có job_id', () => pm.expect(j.job_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('job_pdf_again', j.job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{url_pdf}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Chờ PDF lần 2",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('status = done', () => pm.expect(j.status).to.eql('done'));",
+                  "  pm.test('Cùng sha256 với lần 1', () => pm.expect(j.sha256).to.eql(pm.collectionVariables.get('sha_pdf')));",
+                  "  pm.test('Nhận ra nội dung cũ (not_modified / redownloaded / duplicate_content)', () => pm.expect(j.not_modified || j.redownloaded || j.duplicate_content).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/jobs/{{job_pdf_again}}"
+          }
+        },
+        {
+          "name": "Gửi lại PDF với force",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('Có job_id', () => pm.expect(j.job_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('job_pdf_force', j.job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{url_pdf}}\",\n  \"force\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Chờ PDF force",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('status = done', () => pm.expect(j.status).to.eql('done'));",
+                  "  pm.test('forced = true', () => pm.expect(j.forced).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/jobs/{{job_pdf_force}}"
+          }
+        },
+        {
+          "name": "Gửi URL lần 1 (force để job chạy đủ lâu)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('Có job_id', () => pm.expect(j.job_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('job_dedup', j.job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{url_dedup}}\",\n  \"force\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Gửi URL lần 2 ngay lập tức",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('deduplicated = true', () => pm.expect(j.deduplicated).to.be.true);",
+                  "pm.test('Trả lại đúng job lần 1', () => pm.expect(j.job_id).to.eql(pm.collectionVariables.get('job_dedup')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{url_dedup}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Phải gửi ngay sau \"Gửi URL lần 1\", khi job đó chưa xong (trong khoảng 2 giây)."
+          }
+        },
+        {
+          "name": "Chờ job chống trùng",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('status = done', () => pm.expect(j.status).to.eql('done'));",
+                  "  pm.test('format = html', () => pm.expect(j.format).to.eql('html'));",
+                  "  pm.test('Có content_ref', () => pm.expect(j.content_ref).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/jobs/{{job_dedup}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Các trường hợp lỗi",
+      "description": "",
+      "item": [
+        {
+          "name": "Body có trường lạ",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('invalid_request', () => pm.expect(pm.response.json().error.code).to.eql('invalid_request'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://hust.edu.vn/\",\n  \"wait\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Thiếu url",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('invalid_request', () => pm.expect(pm.response.json().error.code).to.eql('invalid_request'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "JSON sai cú pháp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('bad_json', () => pm.expect(pm.response.json().error.code).to.eql('bad_json'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"url\": ",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "URL không phải http/https",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('invalid_url', () => pm.expect(pm.response.json().error.code).to.eql('invalid_url'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"ftp://hust.edu.vn/file.pdf\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "URL nội bộ (chống SSRF)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('blocked_host', () => pm.expect(pm.response.json().error.code).to.eql('blocked_host'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"http://127.0.0.1:9000/\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Job không tồn tại",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 not_found', () => { pm.response.to.have.status(404); pm.expect(pm.response.json().error.code).to.eql('not_found'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/jobs/00000000-0000-0000-0000-000000000000"
+          }
+        },
+        {
+          "name": "Hỏi job ở nhầm bản (8801)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404: job chỉ nằm ở bản đã nhận', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base2}}/jobs/{{job_html}}",
+            "description": "job_html được gửi vào bản 8800, nên bản 8801 không biết job này."
+          }
+        },
+        {
+          "name": "Gửi trang không tồn tại",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('Có job_id', () => pm.expect(j.job_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('job_404', j.job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{url_404}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Chờ trang không tồn tại",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('status = failed', () => pm.expect(j.status).to.eql('failed'));",
+                  "  pm.test('error.code = download_error', () => pm.expect(j.error.code).to.eql('download_error'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/jobs/{{job_404}}"
+          }
+        },
+        {
+          "name": "Gửi trang cần đăng nhập",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "pm.test('Có job_id', () => pm.expect(j.job_id).to.be.a('string'));",
+                  "pm.collectionVariables.set('job_auth', j.job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{url_auth}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Chờ trang cần đăng nhập",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('status = failed', () => pm.expect(j.status).to.eql('failed'));",
+                  "  pm.test('auth_required = true', () => { pm.expect(j.auth_required).to.be.true; pm.expect(j.error.code).to.eql('auth_required'); });",
+                  "  pm.test('Có final_url (trang login nếu nguồn chuyển hướng, URL gốc nếu nguồn trả 401)', () => pm.expect(j.final_url).to.be.a('string'));",
+                  "  pm.test('Không lưu nội dung', () => pm.expect(j.content_ref).to.be.null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/jobs/{{job_auth}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Mock API (cổng 8899)",
+      "description": "Cần chạy `npm run mock:api` trong src/downloader. Không cần Docker, MinIO hay mạng.",
+      "item": [
+        {
+          "name": "Mock: ping",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mock}}/ping"
+          }
+        },
+        {
+          "name": "Mock: gửi HTML",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202', () => pm.response.to.have.status(202));",
+                  "pm.collectionVariables.set('mock_job', pm.response.json().job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mock}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://hust.edu.vn/vi/news/tin-tuc-su-kien/\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Mock: chờ HTML",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('status = done', () => pm.expect(j.status).to.eql('done'));",
+                  "  pm.test('format = html', () => pm.expect(j.format).to.eql('html'));",
+                  "  pm.test('Có content_ref', () => pm.expect(j.content_ref).to.be.a('string'));",
+                  "  pm.collectionVariables.set('mock_ref', j.content_ref);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mock}}/jobs/{{mock_job}}"
+          }
+        },
+        {
+          "name": "Mock: đọc nội dung",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mock_ref}}"
+          }
+        },
+        {
+          "name": "Mock: gửi URL lỗi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('mock_fail_job', pm.response.json().job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mock}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com/mock-fail\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Mock: chờ URL lỗi",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('failed / download_error', () => { pm.expect(j.status).to.eql('failed'); pm.expect(j.error.code).to.eql('download_error'); });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mock}}/jobs/{{mock_fail_job}}"
+          }
+        },
+        {
+          "name": "Mock: gửi URL cần đăng nhập",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('mock_auth_job', pm.response.json().job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mock}}/load",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com/mock-auth-required\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Mock: chờ URL cần đăng nhập",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 1500); // chờ 1,5 s trước mỗi lần hỏi"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const counter = 'poll_' + pm.info.requestName;",
+                  "if (['queued', 'downloading', 'storing'].includes(j.status)) {",
+                  "  const n = Number(pm.collectionVariables.get(counter) || 0) + 1;",
+                  "  pm.collectionVariables.set(counter, n);",
+                  "  pm.test('Job chưa xong (status=' + j.status + '). Bấm Send lại, Runner sẽ tự hỏi lại', () => true);",
+                  "  if (n < 40) postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(counter);",
+                  "  pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "  pm.test('failed / auth_required', () => { pm.expect(j.status).to.eql('failed'); pm.expect(j.auth_required).to.be.true; });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mock}}/jobs/{{mock_auth_job}}"
+          }
+        }
+      ]
+    }
+  ]
+}
